@@ -1,0 +1,33 @@
+export const ErrorCodes = {
+  SERVER_ERROR: 'SERVER_ERROR',
+  INVALID_TOKEN: 'INVALID_TOKEN',
+  USER_NOT_FOUND: 'USER_NOT_FOUND',
+  VALIDATION_ERROR: 'VALIDATION_ERROR',
+  RATE_LIMIT_EXCEEDED: 'RATE_LIMIT_EXCEEDED',
+  INVALID_REQUEST: 'INVALID_REQUEST',
+  RESOURCE_NOT_FOUND: 'RESOURCE_NOT_FOUND',
+  UNAUTHORIZED: 'UNAUTHORIZED',
+  FORBIDDEN: 'FORBIDDEN',
+  METHOD_NOT_ALLOWED: 'METHOD_NOT_ALLOWED',
+  CONFLICT: 'CONFLICT',
+  TOO_MANY_REQUESTS: 'TOO_MANY_REQUESTS',
+  BAD_GATEWAY: 'BAD_GATEWAY',
+  SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
+} as const
+
+export const ErrorMessages = {
+  [ErrorCodes.SERVER_ERROR]: 'Internal server error occurred',
+  [ErrorCodes.INVALID_TOKEN]: 'Invalid or expired authentication token',
+  [ErrorCodes.USER_NOT_FOUND]: 'User not found',
+  [ErrorCodes.VALIDATION_ERROR]: 'Request validation failed',
+  [ErrorCodes.RATE_LIMIT_EXCEEDED]: 'Rate limit exceeded',
+  [ErrorCodes.INVALID_REQUEST]: 'Invalid request format or parameters',
+  [ErrorCodes.RESOURCE_NOT_FOUND]: 'Requested resource not found',
+  [ErrorCodes.UNAUTHORIZED]: 'Authentication required',
+  [ErrorCodes.FORBIDDEN]: 'Access forbidden',
+  [ErrorCodes.METHOD_NOT_ALLOWED]: 'HTTP method not allowed',
+  [ErrorCodes.CONFLICT]: 'Resource conflict',
+  [ErrorCodes.TOO_MANY_REQUESTS]: 'Too many requests',
+  [ErrorCodes.BAD_GATEWAY]: 'Bad gateway',
+  [ErrorCodes.SERVICE_UNAVAILABLE]: 'Service temporarily unavailable',
+} as const

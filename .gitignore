@@ -1,9 +1,7 @@
-# prod
+# Production build
 dist/
 
-# dev
-.yarn/
-!.yarn/releases
+# Development
 .vscode/*
 !.vscode/launch.json
 !.vscode/*.code-snippets
@@ -11,16 +9,21 @@ dist/
 .idea/usage.statistics.xml
 .idea/shelf
 
-# deps
+# Dependencies
 node_modules/
-.wrangler
+.pnpm-store/
+.pnpm-debug.log*
+.wrangler/
+wrangler.toml
+drizzle/
 
-# env
+# Environment variables
 .env
-.env.production
+.env.*
+!.env.example
 .dev.vars
 
-# logs
+# Logs
 logs/
 *.log
 npm-debug.log*
@@ -29,5 +32,10 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# misc
+# OS-specific files
 .DS_Store
+Thumbs.db
+
+# pnpm-specific
+pnpm-lock.yaml
+.pnpm-store/

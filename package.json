@@ -3,13 +3,30 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy --minify",
-    "cf-typegen": "wrangler types --env-interface CloudflareBindings"
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings",
+    "format": "biome format --write .",
+    "lint": "biome lint .",
+    "check": "biome check --write .",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply db-flare --local",
+    "db:migrate:prod": "wrangler d1 migrations apply db-flare",
+    "db:init:local": "wrangler d1 execute db-flare --local --command='SELECT 1'",
+    "studio:local": "pnpm db:init:local && pnpm db:migrate:local && drizzle-kit studio --config=drizzle.config.ts",
+    "studio:remote": "REMOTE=true drizzle-kit studio --config=drizzle.config.ts",
+    "dev:db": "pnpm db:migrate:local && pnpm dev",
+    "db:fresh": "rm -rf .wrangler/state/v3/d1 && pnpm db:init:local && pnpm db:migrate:local"
   },
   "dependencies": {
+    "drizzle-orm": "^0.36.4",
     "hono": "^4.6.12"
   },
   "devDependencies": {
+    "@biomejs/biome": "1.9.4",
     "@cloudflare/workers-types": "^4.20241127.0",
+    "@types/node": "^22.10.1",
+    "better-sqlite3": "^11.6.0",
+    "dotenv": "^16.4.5",
+    "drizzle-kit": "^0.28.1",
     "wrangler": "^3.88.0"
   }
 }
