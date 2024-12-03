@@ -47,7 +47,7 @@
     }
   },
   "javascript": {
-    "globals": ["$", "_", "CloudflareBindings", "D1Database"],
+    "globals": ["$", "_", "CloudflareBindings", "D1Database", "KVNamespace"],
     "formatter": {
       "quoteStyle": "single",
       "trailingCommas": "es5",

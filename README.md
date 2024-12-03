@@ -1,6 +1,6 @@
 # Cloudflare Workers with D1 and Drizzle
 
-Development workflow for Cloudflare Workers Honoprojects using D1 database and Drizzle ORM.
+Development workflow for Cloudflare Workers Hono  projects using D1 database and Drizzle ORM.
 
 ## Quick Start
 

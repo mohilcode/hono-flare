@@ -1,7 +1,7 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import dotenv from 'dotenv'
 import { defineConfig } from 'drizzle-kit'
-import fs from 'fs'
-import path from 'path'
 
 dotenv.config({ path: '.dev.vars' })
 
@@ -30,7 +30,7 @@ const getLocalD1DB = (): string => {
 
 export default defineConfig({
   schema: './src/db/schema.ts',
-  out: './migrations',
+  out: './drizzle/migrations',
   dialect: 'sqlite',
   ...(process.env.REMOTE === 'true'
     ? {
@@ -43,7 +43,7 @@ export default defineConfig({
       }
     : {
         dbCredentials: {
-          url: getLocalD1DB()
-        }
-      })
+          url: getLocalD1DB(),
+        },
+      }),
 })
