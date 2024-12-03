@@ -47,7 +47,16 @@
     }
   },
   "javascript": {
-    "globals": ["$", "_", "CloudflareBindings", "D1Database", "KVNamespace"],
+    "globals": [
+      "$",
+      "_",
+      "CloudflareBindings",
+      "D1Database",
+      "KVNamespace",
+      "R2Bucket",
+      "R2Object",
+      "R2ObjectBody"
+    ],
     "formatter": {
       "quoteStyle": "single",
       "trailingCommas": "es5",

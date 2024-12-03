@@ -5,4 +5,5 @@ interface CloudflareBindings {
   CLOUDFLARE_DATABASE_ID: string
   CLOUDFLARE_D1_TOKEN: string
   KV: KVNamespace
+  R2: R2Bucket
 }
