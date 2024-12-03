@@ -1,3 +1,3 @@
-export const createKV = (env: CloudflareBindings) => ({
-  users: env.KV,
+export const createKV = (KV: KVNamespace) => ({
+  users: KV,
 })

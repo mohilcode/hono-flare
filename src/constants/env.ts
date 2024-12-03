@@ -1,2 +1,2 @@
-export const isDevelopment = (env: CloudflareBindings) => env.ENV === 'development'
-export const isProduction = (env: CloudflareBindings) => env.ENV === 'production'
+export const isDevelopment = (ENV: string) => ENV === 'development'
+export const isProduction = (ENV: string) => ENV === 'production'

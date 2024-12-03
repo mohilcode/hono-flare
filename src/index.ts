@@ -13,7 +13,7 @@ app.use('*', logger())
 app.use('*', cors())
 
 app.use('*', async (c, next) => {
-  if (isDevelopment(c.env)) {
+  if (isDevelopment(c.env.ENV)) {
     return prettyJSON()(c, next)
   }
   await next()

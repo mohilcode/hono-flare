@@ -1,3 +1,3 @@
-export const createR2 = (env: CloudflareBindings) => ({
-  bucket: env.R2,
+export const createR2 = (R2: R2Bucket) => ({
+  bucket: R2,
 })
