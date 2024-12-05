@@ -13,6 +13,7 @@ export const ErrorCodes = {
   TOO_MANY_REQUESTS: 'TOO_MANY_REQUESTS',
   BAD_GATEWAY: 'BAD_GATEWAY',
   SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
+  EMAIL_NOT_VERIFIED: 'EMAIL_NOT_VERIFIED',
 } as const
 
 export const ErrorMessages = {
@@ -30,4 +31,5 @@ export const ErrorMessages = {
   [ErrorCodes.TOO_MANY_REQUESTS]: 'Too many requests',
   [ErrorCodes.BAD_GATEWAY]: 'Bad gateway',
   [ErrorCodes.SERVICE_UNAVAILABLE]: 'Service temporarily unavailable',
+  [ErrorCodes.EMAIL_NOT_VERIFIED]: 'Please verify your email address before logging in',
 } as const

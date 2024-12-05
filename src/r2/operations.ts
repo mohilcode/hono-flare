@@ -6,7 +6,7 @@ import type {
   R2Metadata,
   R2ObjectInfo,
   R2UploadOptions,
-} from './types'
+} from '../types/r2'
 import { mapR2ObjectToInfo, parseMetadata, sanitizeMetadata } from './utils'
 
 export const uploadFile = async (

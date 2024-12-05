@@ -1,6 +1,6 @@
 import type { Hono } from 'hono'
-import userRoutes from './users'
+import authRoutes from './auth'
 
 export const registerRoutes = (app: Hono<{ Bindings: CloudflareBindings }>) => {
-  app.route('/users', userRoutes)
+  app.route('/auth', authRoutes)
 }

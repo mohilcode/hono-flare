@@ -15,7 +15,7 @@ node_modules/
 .pnpm-debug.log*
 .wrangler/
 wrangler.toml
-drizzle/
+migrations/
 
 # Environment variables
 .env

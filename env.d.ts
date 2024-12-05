@@ -6,4 +6,5 @@ interface CloudflareBindings {
   CLOUDFLARE_D1_TOKEN: string
   KV: KVNamespace
   R2: R2Bucket
+  RESEND_API_KEY: string
 }

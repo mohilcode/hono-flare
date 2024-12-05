@@ -30,7 +30,7 @@ const getLocalD1DB = (): string => {
 
 export default defineConfig({
   schema: './src/db/schema.ts',
-  out: './drizzle/migrations',
+  out: './migrations',
   dialect: 'sqlite',
   ...(process.env.REMOTE === 'true'
     ? {

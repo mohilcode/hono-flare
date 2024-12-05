@@ -1,4 +1,4 @@
-import type { R2Metadata, R2ObjectInfo } from './types'
+import type { R2Metadata, R2ObjectInfo } from '../types/r2'
 
 export const sanitizeMetadata = (metadata: R2Metadata): Record<string, string> => {
   const sanitized: Record<string, string> = {}
