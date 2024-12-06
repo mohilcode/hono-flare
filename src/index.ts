@@ -2,14 +2,16 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { prettyJSON } from 'hono/pretty-json'
+import { secureHeaders } from 'hono/secure-headers'
 import { isDevelopment } from './constants/env'
-import { ErrorCodes, ErrorMessages } from './constants/error'
-import { errorHandler } from './middleware/error'
+import { errorHandler, requestId } from './middleware/error'
 import { registerRoutes } from './routes'
+import { ResourceNotFoundError } from './types/error'
 
 const app = new Hono<{ Bindings: CloudflareBindings }>()
 
 app.use('*', logger())
+app.use('*', requestId)
 app.use('*', cors())
 
 app.use('*', async (c, next) => {
@@ -27,18 +29,45 @@ app.get('/health', c =>
   })
 )
 
+app.use('*', (c, next) => {
+  return secureHeaders({
+    strictTransportSecurity: isDevelopment(c.env.ENV)
+      ? false
+      : 'max-age=31536000; includeSubDomains; preload',
+    contentSecurityPolicy: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", 'https://cdnjs.cloudflare.com'],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'", 'https:', 'data:'],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"],
+    },
+    crossOriginEmbedderPolicy: true,
+    crossOriginOpenerPolicy: true,
+    crossOriginResourcePolicy: true,
+    originAgentCluster: true,
+    referrerPolicy: 'strict-origin-when-cross-origin',
+    xContentTypeOptions: true,
+    xDnsPrefetchControl: true,
+    xDownloadOptions: true,
+    xFrameOptions: 'DENY',
+    xPermittedCrossDomainPolicies: true,
+    xXssProtection: '1; mode=block',
+  })(c, next)
+})
+
 registerRoutes(app)
 
 app.onError(errorHandler)
 
 app.notFound(c => {
-  return c.json(
-    {
-      code: ErrorCodes.RESOURCE_NOT_FOUND,
-      message: ErrorMessages[ErrorCodes.RESOURCE_NOT_FOUND],
-    },
-    { status: 404 }
-  )
+  throw new ResourceNotFoundError('The requested resource was not found', {
+    path: c.req.path,
+    method: c.req.method,
+  })
 })
 
 export default app

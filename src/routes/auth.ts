@@ -1,14 +1,13 @@
 import { eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
-import { ErrorCodes } from '../constants/error'
+import { z } from 'zod'
 import { COOKIE_OPTIONS, CSRF_COOKIE, REFRESH_COOKIE, SESSION_COOKIE } from '../constants/services'
 import { createDB } from '../db'
 import * as schema from '../db/schema'
-import { createError } from '../lib/error'
 import { authenticate, csrfProtection, rateLimiter } from '../middleware/auth'
 import { loginUser, logoutUser, refreshAccessToken, registerUser } from '../services/auth'
-import { createEmailConfig } from '../services/email'
+import { createEmailConfig, getEmailDomain, isDisposableEmail } from '../services/email'
 import { initiatePasswordReset, resetPassword } from '../services/password'
 import { createVerificationToken, verifyToken } from '../services/verification'
 import {
@@ -19,9 +18,14 @@ import {
   ResetPasswordRequestSchema,
   type Variables,
 } from '../types/auth'
-import type { VerificationResult } from '../types/auth'
-import { type HttpStatus, HttpStatusCode } from '../types/http'
-import { generateCsrfToken } from '../utils/crypto'
+import {
+  AuthenticationError,
+  RateLimitError,
+  ResourceNotFoundError,
+  ValidationError,
+} from '../types/error'
+import { validateOrThrow } from '../types/error'
+import { generateAuthKeyPair, generateCsrfToken } from '../utils/crypto'
 
 const route = new Hono<{
   Bindings: CloudflareBindings
@@ -35,7 +39,13 @@ route.post('/register', rateLimiter, async c => {
   try {
     const data = await c.req.json()
     const baseUrl = new URL(c.req.url).origin
-    const validatedData = RegisterRequestSchema.parse(data)
+
+    const validatedData = validateOrThrow(RegisterRequestSchema, data)
+
+    const domain = getEmailDomain(validatedData.email)
+    if (await isDisposableEmail(domain)) {
+      throw new ValidationError('Disposable email addresses are not allowed')
+    }
 
     const user = await registerUser(
       c.env.DB,
@@ -44,11 +54,9 @@ route.post('/register', rateLimiter, async c => {
       baseUrl,
       c.env.RESEND_API_KEY
     )
-    return c.json({ user }, HttpStatusCode.CREATED)
+
+    return c.json({ user }, 201)
   } catch (error) {
-    if (error instanceof Error) {
-      throw createError(ErrorCodes.VALIDATION_ERROR, HttpStatusCode.BAD_REQUEST, error.message)
-    }
     throw error
   }
 })
@@ -59,21 +67,12 @@ route.post('/register', rateLimiter, async c => {
 route.post('/login', rateLimiter, async c => {
   try {
     const data = await c.req.json()
-    const validatedData = LoginRequestSchema.parse(data)
+    const validatedData = validateOrThrow(LoginRequestSchema, data)
 
     const userAgent = c.req.header('User-Agent')
     const ipAddress = c.req.header('CF-Connecting-IP')
 
-    const keyPair = (await crypto.subtle.generateKey(
-      {
-        name: 'RSASSA-PKCS1-v1_5',
-        modulusLength: 2048,
-        publicExponent: new Uint8Array([1, 0, 1]).buffer,
-        hash: { name: 'SHA-256' },
-      },
-      true,
-      ['sign', 'verify']
-    )) as CryptoKeyPair
+    const keyPair = await generateAuthKeyPair()
 
     const { user, token, session } = await loginUser(
       c.env.DB,
@@ -109,9 +108,6 @@ route.post('/login', rateLimiter, async c => {
       csrfToken,
     })
   } catch (error) {
-    if (error instanceof Error) {
-      throw createError(ErrorCodes.VALIDATION_ERROR, HttpStatusCode.BAD_REQUEST, error.message)
-    }
     throw error
   }
 })
@@ -121,16 +117,7 @@ route.post('/login', rateLimiter, async c => {
  */
 route.post('/logout', async c => {
   try {
-    const keyPair = (await crypto.subtle.generateKey(
-      {
-        name: 'RSASSA-PKCS1-v1_5',
-        modulusLength: 2048,
-        publicExponent: new Uint8Array([1, 0, 1]).buffer,
-        hash: { name: 'SHA-256' },
-      },
-      true,
-      ['sign', 'verify']
-    )) as CryptoKeyPair
+    const keyPair = await generateAuthKeyPair()
 
     await authenticate(keyPair.publicKey)(c, async () => {})
     await csrfProtection(c, async () => {})
@@ -147,12 +134,7 @@ route.post('/logout', async c => {
 
     return c.json({ message: 'Logged out successfully' })
   } catch (error) {
-    throw createError(
-      ErrorCodes.SERVER_ERROR,
-      HttpStatusCode.INTERNAL_SERVER_ERROR,
-      'Logout failed',
-      { error }
-    )
+    throw error
   }
 })
 
@@ -163,21 +145,12 @@ route.post('/refresh', rateLimiter, async c => {
   try {
     const refreshToken = getCookie(c, REFRESH_COOKIE)
     if (!refreshToken) {
-      throw createError(ErrorCodes.INVALID_TOKEN, HttpStatusCode.UNAUTHORIZED, 'No refresh token')
+      throw new AuthenticationError('No refresh token provided')
     }
 
-    const payload = JWTPayloadSchema.parse(JSON.parse(atob(refreshToken.split('.')[1])))
+    const payload = validateOrThrow(JWTPayloadSchema, JSON.parse(atob(refreshToken.split('.')[1])))
 
-    const keyPair = (await crypto.subtle.generateKey(
-      {
-        name: 'RSASSA-PKCS1-v1_5',
-        modulusLength: 2048,
-        publicExponent: new Uint8Array([1, 0, 1]).buffer,
-        hash: { name: 'SHA-256' },
-      },
-      true,
-      ['sign', 'verify']
-    )) as CryptoKeyPair
+    const keyPair = await generateAuthKeyPair()
 
     const newToken = await refreshAccessToken(
       c.env.DB,
@@ -201,9 +174,6 @@ route.post('/refresh', rateLimiter, async c => {
       },
     })
   } catch (error) {
-    if (error instanceof Error) {
-      throw createError(ErrorCodes.INVALID_TOKEN, HttpStatusCode.UNAUTHORIZED, error.message)
-    }
     throw error
   }
 })
@@ -213,25 +183,14 @@ route.post('/refresh', rateLimiter, async c => {
  */
 route.get('/session', async c => {
   try {
-    const keyPair = (await crypto.subtle.generateKey(
-      {
-        name: 'RSASSA-PKCS1-v1_5',
-        modulusLength: 2048,
-        publicExponent: new Uint8Array([1, 0, 1]).buffer,
-        hash: { name: 'SHA-256' },
-      },
-      true,
-      ['sign', 'verify']
-    )) as CryptoKeyPair
+    const keyPair = await generateAuthKeyPair()
 
     await authenticate(keyPair.publicKey)(c, async () => {})
 
     const payload = c.get('jwtPayload')
     return c.json({ session: payload })
   } catch (error) {
-    throw createError(ErrorCodes.UNAUTHORIZED, HttpStatusCode.UNAUTHORIZED, 'Invalid session', {
-      error,
-    })
+    throw error
   }
 })
 
@@ -239,33 +198,51 @@ route.get('/session', async c => {
  * Resend verification email
  */
 route.post('/resend', rateLimiter, async c => {
-  const { email } = await c.req.json()
-  if (!email) {
-    throw createError(ErrorCodes.VALIDATION_ERROR, 400 as HttpStatus, 'Email is required')
+  try {
+    const { email } = validateOrThrow(z.object({ email: z.string().email() }), await c.req.json())
+
+    const domain = getEmailDomain(email)
+    if (await isDisposableEmail(domain)) {
+      throw new ValidationError('Disposable email addresses are not allowed')
+    }
+
+    const emailConfig = createEmailConfig(c.env.RESEND_API_KEY)
+    if (!emailConfig.validateEmail(email)) {
+      throw new ValidationError('Invalid email format')
+    }
+
+    // Check rate limit specifically for email
+    if (!(await emailConfig.checkRateLimit(c.env.KV, email))) {
+      throw new RateLimitError('Too many verification attempts', {
+        resetIn: '1 hour',
+        maxAttempts: 5,
+      })
+    }
+
+    const db = createDB(c.env)
+    const user = await db.select().from(schema.users).where(eq(schema.users.email, email)).get()
+
+    if (!user) {
+      throw new ResourceNotFoundError('User not found')
+    }
+
+    if (user.emailVerified) {
+      return c.json({ message: 'Email already verified' })
+    }
+
+    const baseUrl = new URL(c.req.url).origin
+    const { verificationUrl } = await createVerificationToken(c.env.KV, user.id, email, baseUrl)
+
+    await emailConfig.sendVerificationEmail({
+      to: email,
+      firstName: user.firstName,
+      verificationUrl,
+    })
+
+    return c.json({ message: 'Verification email sent' })
+  } catch (error) {
+    throw error
   }
-
-  const db = createDB(c.env)
-  const user = await db.select().from(schema.users).where(eq(schema.users.email, email)).get()
-
-  if (!user) {
-    throw createError(ErrorCodes.USER_NOT_FOUND, 404 as HttpStatus, 'User not found')
-  }
-
-  if (user.emailVerified) {
-    return c.json({ message: 'Email already verified' })
-  }
-
-  const baseUrl = new URL(c.req.url).origin
-  const { verificationUrl } = await createVerificationToken(c.env.KV, user.id, email, baseUrl)
-
-  const emailConfig = createEmailConfig(c.env.RESEND_API_KEY)
-  await emailConfig.sendVerificationEmail({
-    to: email,
-    firstName: user.firstName,
-    verificationUrl,
-  })
-
-  return c.json({ message: 'Verification email sent' })
 })
 
 /**
@@ -275,29 +252,17 @@ route.get('/verify', async c => {
   try {
     const token = c.req.query('token')
     if (!token) {
-      throw createError(
-        ErrorCodes.VALIDATION_ERROR,
-        400 as HttpStatus,
-        'Verification token is required'
-      )
+      throw new ValidationError('Verification token is required')
     }
 
-    const result: VerificationResult = await verifyToken(c.env.KV, token)
+    const result = await verifyToken(c.env.KV, token)
 
     if (!result.success) {
-      throw createError(
-        ErrorCodes.INVALID_TOKEN,
-        400 as HttpStatus,
-        result.error || 'Invalid verification token'
-      )
+      throw new ValidationError(result.error || 'Invalid verification token')
     }
 
     if (!result.userId) {
-      throw createError(
-        ErrorCodes.INVALID_TOKEN,
-        400 as HttpStatus,
-        'Invalid verification token: missing user ID'
-      )
+      throw new ValidationError('Invalid verification token: missing user ID')
     }
 
     const db = createDB(c.env)
@@ -307,23 +272,12 @@ route.get('/verify', async c => {
       .where(eq(schema.users.id, result.userId))
       .run()
 
-    return c.json(
-      {
-        success: true,
-        message: 'Email verified successfully',
-      },
-      200
-    )
+    return c.json({
+      success: true,
+      message: 'Email verified successfully',
+    })
   } catch (error) {
-    if (error instanceof Error && 'code' in error) {
-      throw error
-    }
-    throw createError(
-      ErrorCodes.SERVER_ERROR,
-      HttpStatusCode.INTERNAL_SERVER_ERROR,
-      'Email verification failed',
-      { error }
-    )
+    throw error
   }
 })
 
@@ -333,7 +287,7 @@ route.get('/verify', async c => {
 route.post('/forgot-password', rateLimiter, async c => {
   try {
     const data = await c.req.json()
-    const validatedData = ForgotPasswordRequestSchema.parse(data)
+    const validatedData = validateOrThrow(ForgotPasswordRequestSchema, data)
 
     const baseUrl = new URL(c.req.url).origin
     await initiatePasswordReset(c.env.DB, c.env.KV, validatedData, baseUrl, c.env.RESEND_API_KEY)
@@ -342,9 +296,6 @@ route.post('/forgot-password', rateLimiter, async c => {
       message: 'If your email is registered, you will receive password reset instructions',
     })
   } catch (error) {
-    if (error instanceof Error) {
-      throw createError(ErrorCodes.VALIDATION_ERROR, 400 as HttpStatus, error.message)
-    }
     throw error
   }
 })
@@ -355,7 +306,7 @@ route.post('/forgot-password', rateLimiter, async c => {
 route.post('/reset-password', rateLimiter, async c => {
   try {
     const data = await c.req.json()
-    const validatedData = ResetPasswordRequestSchema.parse(data)
+    const validatedData = validateOrThrow(ResetPasswordRequestSchema, data)
 
     await resetPassword(c.env.DB, c.env.KV, validatedData, c.env.RESEND_API_KEY)
 
@@ -363,9 +314,6 @@ route.post('/reset-password', rateLimiter, async c => {
       message: 'Password reset successful',
     })
   } catch (error) {
-    if (error instanceof Error) {
-      throw createError(ErrorCodes.VALIDATION_ERROR, 400 as HttpStatus, error.message)
-    }
     throw error
   }
 })

@@ -1,64 +1,84 @@
 import type { Context } from 'hono'
 import { HTTPException } from 'hono/http-exception'
+import type { z } from 'zod'
 import { isDevelopment } from '../constants/env'
 import { ErrorCodes } from '../constants/error'
-import { APIError } from '../lib/error'
+import {
+  type BaseError,
+  type ErrorLogContext,
+  type ErrorResponse,
+  ValidationError,
+  isBaseError,
+  toErrorResponse,
+} from '../types/error'
 import { HttpStatusCode } from '../types/http'
 
-export const errorLogger = async (err: Error, c: Context) => {
-  console.error({
+export const errorLogger = async (err: Error | BaseError, c: Context): Promise<void> => {
+  const logContext: ErrorLogContext = {
     timestamp: new Date().toISOString(),
     path: c.req.path,
     method: c.req.method,
     message: err.message,
     stack: err.stack,
     requestId: c.get('requestId'),
-  })
+  }
+
+  if (isBaseError(err)) {
+    logContext.errorCode = err.code
+    logContext.statusCode = err.statusCode
+    logContext.details = err.details
+  }
+
+  console.error(logContext)
 }
 
 export const errorHandler = async (err: Error, c: Context) => {
   await errorLogger(err, c)
 
-  if (err instanceof APIError) {
-    return c.json(
-      {
-        code: err.code,
-        message: err.message,
-        ...(err.details && { details: err.details }),
-        ...(isDevelopment(c.env) && { stack: err.stack }),
+  let response: ErrorResponse
+  let status: number
+
+  if (isBaseError(err)) {
+    response = err.toJSON()
+    status = err.statusCode
+  } else if (err instanceof HTTPException) {
+    response = {
+      code: ErrorCodes.INVALID_REQUEST,
+      message: err.message,
+      details: {
+        status: err.status,
+        name: err.name,
+        ...(err.getResponse && { response: err.getResponse() }),
       },
-      { status: err.statusCode }
-    )
+      ...(isDevelopment(c.env.ENV) && { stack: err.stack }),
+      timestamp: new Date().toISOString(),
+    }
+    status = err.status
+  } else if (err instanceof Error && err.name === 'ZodError') {
+    const zodError = err as z.ZodError
+    const validationError = new ValidationError('Validation failed', {
+      errors: zodError.errors.map(error => ({
+        path: error.path,
+        message: error.message,
+        code: error.code,
+      })),
+    })
+    response = validationError.toJSON()
+    status = HttpStatusCode.BAD_REQUEST
+  } else {
+    response = toErrorResponse(err)
+    status = HttpStatusCode.INTERNAL_SERVER_ERROR
   }
 
-  if (err instanceof HTTPException) {
-    return c.json(
-      {
-        code: ErrorCodes.INVALID_REQUEST,
-        message: err.message,
-        ...(isDevelopment(c.env) && { stack: err.stack }),
-      },
-      { status: err.status }
-    )
+  if (isDevelopment(c.env.ENV)) {
+    response.stack = err.stack
   }
 
-  if (err.name === 'ValidationError') {
-    return c.json(
-      {
-        code: ErrorCodes.VALIDATION_ERROR,
-        message: 'Validation failed',
-        details: err,
-      },
-      { status: HttpStatusCode.BAD_REQUEST }
-    )
-  }
+  return c.json(response, { status })
+}
 
-  return c.json(
-    {
-      code: ErrorCodes.SERVER_ERROR,
-      message: 'Internal Server Error',
-      ...(isDevelopment(c.env) && { stack: err.stack }),
-    },
-    { status: HttpStatusCode.INTERNAL_SERVER_ERROR }
-  )
+export const requestId = async (c: Context, next: () => Promise<void>) => {
+  const requestId = crypto.randomUUID()
+  c.set('requestId', requestId)
+  await next()
 }

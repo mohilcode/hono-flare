@@ -1,12 +1,14 @@
 import type { Context, Next } from 'hono'
 import { getCookie } from 'hono/cookie'
-import { HTTPException } from 'hono/http-exception'
-import { ErrorCodes } from '../constants/error'
 import { BEARER_PREFIX, CSRF_COOKIE, CSRF_HEADER } from '../constants/services'
-import { createError } from '../lib/error'
 import { validateSession } from '../services/auth'
 import type { JWTPayload } from '../types/auth'
-import { HttpStatusCode } from '../types/http'
+import {
+  AuthenticationError,
+  AuthorizationError,
+  RateLimitError,
+  ValidationError,
+} from '../types/error'
 import { verifyCsrfToken } from '../utils/crypto'
 import { isTokenBlacklisted, verifyToken } from '../utils/jwt'
 
@@ -14,9 +16,11 @@ interface AuthHonoContext extends Context {
   get(key: 'jwtPayload'): JWTPayload
   get(key: 'userId'): string
   get(key: 'sessionId'): string
+  get(key: 'user'): { emailVerified: boolean } & Record<string, unknown>
   set(key: 'jwtPayload', value: JWTPayload): void
   set(key: 'userId', value: string): void
   set(key: 'sessionId', value: string): void
+  set(key: 'user', value: { emailVerified: boolean } & Record<string, unknown>): void
 }
 
 /**
@@ -24,11 +28,7 @@ interface AuthHonoContext extends Context {
  */
 const extractBearerToken = (authHeader: string | undefined): string => {
   if (!authHeader?.startsWith(BEARER_PREFIX)) {
-    throw createError(
-      ErrorCodes.INVALID_TOKEN,
-      HttpStatusCode.UNAUTHORIZED,
-      'Invalid authorization header'
-    )
+    throw new AuthenticationError('Invalid authorization header')
   }
   return authHeader.slice(BEARER_PREFIX.length)
 }
@@ -46,19 +46,19 @@ export const rateLimiter = async (c: Context, next: Next) => {
   const window = 60
 
   if (current && Number.parseInt(current) >= limit) {
-    throw createError(
-      ErrorCodes.RATE_LIMIT_EXCEEDED,
-      HttpStatusCode.TOO_MANY_REQUESTS,
-      'Rate limit exceeded'
-    )
+    throw new RateLimitError('Rate limit exceeded', {
+      limit,
+      window,
+      remaining: 0,
+      resetAt: Date.now() + window * 1000,
+    })
   }
 
   if (!current) {
     await c.env.KV.put(key, '1', { expirationTtl: window })
   } else {
-    await c.env.KV.put(key, (Number.parseInt(current) + 1).toString(), {
-      expirationTtl: window,
-    })
+    const newValue = (Number.parseInt(current) + 1).toString()
+    await c.env.KV.put(key, newValue, { expirationTtl: window })
   }
 
   await next()
@@ -69,30 +69,26 @@ export const rateLimiter = async (c: Context, next: Next) => {
  */
 export const jwtAuth = (publicKey: CryptoKey) => {
   return async (c: AuthHonoContext, next: Next) => {
-    try {
-      const authHeader = c.req.header('Authorization')
-      const token = extractBearerToken(authHeader)
-
-      const payload = await verifyToken(token, publicKey)
-
-      if (await isTokenBlacklisted(payload.jti, c.env.KV)) {
-        throw createError(
-          ErrorCodes.INVALID_TOKEN,
-          HttpStatusCode.UNAUTHORIZED,
-          'Token has been revoked'
-        )
-      }
-
-      c.set('jwtPayload', payload)
-      c.set('userId', payload.sub)
-
-      await next()
-    } catch (error) {
-      if (error instanceof HTTPException) {
-        throw error
-      }
-      throw createError(ErrorCodes.INVALID_TOKEN, HttpStatusCode.UNAUTHORIZED, 'Invalid token')
+    const authHeader = c.req.header('Authorization')
+    if (!authHeader) {
+      throw new AuthenticationError('Authorization header is required')
     }
+
+    const token = extractBearerToken(authHeader)
+    const payload = await verifyToken(token, publicKey)
+
+    if (!payload.jti) {
+      throw new AuthenticationError('Invalid token: missing JTI')
+    }
+
+    if (await isTokenBlacklisted(payload.jti, c.env.KV)) {
+      throw new AuthenticationError('Token has been revoked')
+    }
+
+    c.set('jwtPayload', payload)
+    c.set('userId', payload.sub)
+
+    await next()
   }
 }
 
@@ -100,39 +96,31 @@ export const jwtAuth = (publicKey: CryptoKey) => {
  * Session authentication middleware
  */
 export const sessionAuth = async (c: AuthHonoContext, next: Next) => {
-  try {
-    const sessionId = getCookie(c, 'session_id')
-    const userId = c.get('userId')
-
-    if (!sessionId) {
-      throw createError(ErrorCodes.UNAUTHORIZED, HttpStatusCode.UNAUTHORIZED, 'No session found')
-    }
-
-    const session = await validateSession(c.env.KV, sessionId, userId)
-    if (!session) {
-      throw createError(ErrorCodes.UNAUTHORIZED, HttpStatusCode.UNAUTHORIZED, 'Invalid session')
-    }
-
-    c.set('sessionId', sessionId)
-
-    await next()
-  } catch (error) {
-    if (error instanceof HTTPException) {
-      throw error
-    }
-    throw createError(
-      ErrorCodes.UNAUTHORIZED,
-      HttpStatusCode.UNAUTHORIZED,
-      'Session validation failed'
-    )
+  const sessionId = getCookie(c, 'session_id')
+  if (!sessionId) {
+    throw new AuthenticationError('No session found')
   }
+
+  const userId = c.get('userId')
+  if (!userId) {
+    throw new AuthenticationError('User ID not found in context')
+  }
+
+  const session = await validateSession(c.env.KV, sessionId, userId)
+  if (!session) {
+    throw new AuthenticationError('Invalid or expired session')
+  }
+
+  c.set('sessionId', sessionId)
+  await next()
 }
 
 /**
  * CSRF protection middleware
  */
 export const csrfProtection = async (c: Context, next: Next) => {
-  if (c.req.method === 'GET' || c.req.method === 'HEAD') {
+  // Skip CSRF check for safe methods
+  if (c.req.method === 'GET' || c.req.method === 'HEAD' || c.req.method === 'OPTIONS') {
     await next()
     return
   }
@@ -140,8 +128,12 @@ export const csrfProtection = async (c: Context, next: Next) => {
   const token = c.req.header(CSRF_HEADER)
   const storedToken = getCookie(c, CSRF_COOKIE)
 
-  if (!token || !storedToken || !verifyCsrfToken(token, storedToken)) {
-    throw createError(ErrorCodes.INVALID_REQUEST, HttpStatusCode.FORBIDDEN, 'Invalid CSRF token')
+  if (!token || !storedToken) {
+    throw new AuthorizationError('CSRF token missing')
+  }
+
+  if (!verifyCsrfToken(token, storedToken)) {
+    throw new AuthorizationError('Invalid CSRF token')
   }
 
   await next()
@@ -153,9 +145,15 @@ export const csrfProtection = async (c: Context, next: Next) => {
 export const requireRole = (allowedRoles: string[]) => {
   return async (c: AuthHonoContext, next: Next) => {
     const payload = c.get('jwtPayload')
+    if (!payload.role) {
+      throw new AuthorizationError('Role information missing')
+    }
 
     if (!allowedRoles.includes(payload.role)) {
-      throw createError(ErrorCodes.FORBIDDEN, HttpStatusCode.FORBIDDEN, 'Insufficient permissions')
+      throw new AuthorizationError('Insufficient permissions', {
+        required: allowedRoles,
+        current: payload.role,
+      })
     }
 
     await next()
@@ -168,9 +166,15 @@ export const requireRole = (allowedRoles: string[]) => {
 export const validateOrigin = (allowedOrigins: string[]) => {
   return async (c: Context, next: Next) => {
     const origin = c.req.header('Origin')
+    if (!origin) {
+      throw new ValidationError('Origin header is required')
+    }
 
-    if (origin && !allowedOrigins.includes(origin)) {
-      throw createError(ErrorCodes.FORBIDDEN, HttpStatusCode.FORBIDDEN, 'Invalid origin')
+    if (!allowedOrigins.includes(origin)) {
+      throw new AuthorizationError('Invalid origin', {
+        origin,
+        allowed: allowedOrigins,
+      })
     }
 
     await next()
@@ -189,14 +193,23 @@ export const authenticate = (publicKey: CryptoKey) => {
 }
 
 /**
- * Email verification middleware
+ * Email verification requirement middleware
  */
-export const requireEmailVerified = async (c: Context, next: Next) => {
+export const requireEmailVerified = async (c: AuthHonoContext, next: Next) => {
   const user = c.get('user')
-
-  if (!user.emailVerified) {
-    throw createError(ErrorCodes.FORBIDDEN, HttpStatusCode.FORBIDDEN, 'Email verification required')
+  if (!user?.emailVerified) {
+    throw new AuthenticationError('Email verification required')
   }
 
+  await next()
+}
+
+/**
+ * Request ID middleware for tracking
+ */
+export const requestId = async (c: Context, next: Next) => {
+  const requestId = crypto.randomUUID()
+  c.set('requestId', requestId)
+  c.res.headers.set('X-Request-ID', requestId)
   await next()
 }

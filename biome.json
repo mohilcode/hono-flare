@@ -43,6 +43,9 @@
         "useConsistentCurlyBraces": "error",
         "noUselessStringRaw": "error",
         "useCollapsedIf": "error"
+      },
+      "complexity": {
+        "noUselessCatch": "off"
       }
     }
   },

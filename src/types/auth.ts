@@ -84,11 +84,19 @@ export type AuthKVNamespace = {
   tokens: KVNamespace
 }
 
+export interface VerificationTokenMetadata {
+  attempts: number
+  lastAttempt: number
+  ipAddress?: string
+  userAgent?: string
+}
+
 export interface VerificationToken {
   token: string
   userId: string
   email: string
   createdAt: number
+  metadata: VerificationTokenMetadata
 }
 
 export interface VerificationResult {
