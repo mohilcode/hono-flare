@@ -21,6 +21,7 @@
     "dev:local": "pnpm db:migrate:local && pnpm dev"
   },
   "dependencies": {
+    "@hono/oauth-providers": "^0.6.2",
     "drizzle-orm": "^0.36.4",
     "hono": "^4.6.12"
   },

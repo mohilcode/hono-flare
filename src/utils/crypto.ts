@@ -1,20 +1,14 @@
 import { KEY_LENGTH, PBKDF2_ITERATIONS, SALT_LENGTH, TOKEN_LENGTH } from '../constants/services'
 import { ValidationError } from '../types/error'
 
-/**
- * Converts ArrayBuffer to base64 string
- */
-const bufferToBase64 = (buffer: ArrayBuffer): string => {
+const _bufferToBase64 = (buffer: ArrayBuffer): string => {
   return btoa(String.fromCharCode(...new Uint8Array(buffer)))
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=+$/, '')
 }
 
-/**
- * Converts base64 string to ArrayBuffer
- */
-const base64ToBuffer = (base64: string): ArrayBuffer => {
+const _base64ToBuffer = (base64: string): ArrayBuffer => {
   if (!/^[A-Za-z0-9_-]+$/.test(base64)) {
     throw new ValidationError('Invalid base64 string format')
   }
@@ -31,10 +25,7 @@ const base64ToBuffer = (base64: string): ArrayBuffer => {
   return buffer.buffer
 }
 
-/**
- * Generates cryptographically secure random bytes
- */
-const generateRandomBytes = (length: number): ArrayBuffer => {
+const _generateRandomBytes = (length: number): ArrayBuffer => {
   if (length <= 0) {
     throw new ValidationError('Length must be positive')
   }
@@ -43,22 +34,35 @@ const generateRandomBytes = (length: number): ArrayBuffer => {
   return bytes.buffer
 }
 
-/**
- * Generates a secure random token
- */
-export const generateToken = (): string => {
-  return bufferToBase64(generateRandomBytes(TOKEN_LENGTH))
+const _timingSafeEqual = (a: string, b: string): boolean => {
+  if (typeof a !== 'string' || typeof b !== 'string') {
+    throw new ValidationError('Both arguments must be strings')
+  }
+
+  if (a.length !== b.length) {
+    return false
+  }
+
+  const aBuffer = new TextEncoder().encode(a)
+  const bBuffer = new TextEncoder().encode(b)
+
+  try {
+    return crypto.subtle.timingSafeEqual(aBuffer, bBuffer)
+  } catch {
+    return false
+  }
 }
 
-/**
- * Hash password using PBKDF2
- */
+export const generateRandomToken = (): string => {
+  return _bufferToBase64(_generateRandomBytes(TOKEN_LENGTH))
+}
+
 export const hashPassword = async (password: string): Promise<string> => {
   if (!password) {
     throw new ValidationError('Password is required')
   }
 
-  const salt = generateRandomBytes(SALT_LENGTH)
+  const salt = _generateRandomBytes(SALT_LENGTH)
   const encoder = new TextEncoder()
   const passwordBuffer = encoder.encode(password)
 
@@ -81,18 +85,15 @@ export const hashPassword = async (password: string): Promise<string> => {
   hashBuffer.set(new Uint8Array(salt), 0)
   hashBuffer.set(new Uint8Array(derivedBits), SALT_LENGTH)
 
-  return bufferToBase64(hashBuffer.buffer)
+  return _bufferToBase64(hashBuffer.buffer)
 }
 
-/**
- * Verify password against hash
- */
 export const verifyPassword = async (password: string, hashString: string): Promise<boolean> => {
   if (!password || !hashString) {
     throw new ValidationError('Password and hash are required')
   }
 
-  const hashBuffer = base64ToBuffer(hashString)
+  const hashBuffer = _base64ToBuffer(hashString)
 
   const salt = hashBuffer.slice(0, SALT_LENGTH)
   const storedKey = hashBuffer.slice(SALT_LENGTH)
@@ -116,55 +117,21 @@ export const verifyPassword = async (password: string, hashString: string): Prom
   return crypto.subtle.timingSafeEqual(derivedBits, storedKey)
 }
 
-/**
- * Generate cryptographically secure random ID
- */
 export const generateId = (): string => {
-  return bufferToBase64(generateRandomBytes(16))
+  return _bufferToBase64(_generateRandomBytes(16))
 }
 
-/**
- * Timing-safe string comparison
- */
-export const timingSafeEqual = (a: string, b: string): boolean => {
-  if (typeof a !== 'string' || typeof b !== 'string') {
-    throw new ValidationError('Both arguments must be strings')
-  }
-
-  if (a.length !== b.length) {
-    return false
-  }
-
-  const aBuffer = new TextEncoder().encode(a)
-  const bBuffer = new TextEncoder().encode(b)
-
-  try {
-    return crypto.subtle.timingSafeEqual(aBuffer, bBuffer)
-  } catch {
-    return false
-  }
-}
-
-/**
- * Generate CSRF token
- */
 export const generateCsrfToken = (): string => {
-  return generateToken()
+  return generateRandomToken()
 }
 
-/**
- * Verify CSRF token
- */
 export const verifyCsrfToken = (token: string, storedToken: string): boolean => {
   if (!token || !storedToken) {
     throw new ValidationError('Token and stored token are required')
   }
-  return timingSafeEqual(token, storedToken)
+  return _timingSafeEqual(token, storedToken)
 }
 
-/**
- * Generate auth key pair
- */
 export const generateAuthKeyPair = async (): Promise<CryptoKeyPair> => {
   return (await crypto.subtle.generateKey(
     {

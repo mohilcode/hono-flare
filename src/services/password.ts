@@ -1,29 +1,41 @@
 import { eq } from 'drizzle-orm'
-import { EMAIL_FROM } from '../constants/services'
 import {
-  createPasswordResetEmailTemplate,
-  createPasswordResetSuccessfulTemplate,
-} from '../constants/templates'
-import { createDB } from '../db'
+  EMAIL_FROM,
+  RATE_LIMIT_PASSWORD_RESET,
+  RESET_TOKEN_EXPIRY,
+  RESET_TOKEN_PREFIX,
+} from '../constants/services'
+import type { DBType } from '../db'
 import * as schema from '../db/schema'
 import { createEmailConfig } from '../services/email'
-import type { ForgotPasswordRequest, ResetPasswordRequest } from '../types/auth'
-import { AuthenticationError, ResourceNotFoundError, ValidationError } from '../types/error'
+import type {
+  InitiatePasswordResetParams,
+  ResetPasswordParams,
+  ResetTokenData,
+} from '../types/auth'
+import {
+  AuthenticationError,
+  RateLimitError,
+  ResourceNotFoundError,
+  ValidationError,
+} from '../types/error'
 import { generateId, hashPassword } from '../utils/crypto'
 import { verifyPassword } from '../utils/crypto'
 
-const RESET_TOKEN_EXPIRY = 60 * 60
-const RESET_TOKEN_PREFIX = 'pwd_reset:'
+const _checkResetRateLimit = async (kv: KVNamespace, email: string): Promise<boolean> => {
+  const key = `${RATE_LIMIT_PASSWORD_RESET}${email}`
+  const attempts = await kv.get(key)
 
-interface ResetTokenData {
-  userId: string
-  email: string
-  createdAt: number
+  if (attempts && Number.parseInt(attempts) >= 3) {
+    return false
+  }
+
+  const current = attempts ? Number.parseInt(attempts) : 0
+  await kv.put(key, (current + 1).toString(), { expirationTtl: 3600 })
+
+  return true
 }
 
-/**
- * Generate password reset token and store in KV
- */
 export const generateResetToken = async (
   kv: KVNamespace,
   userId: string,
@@ -43,23 +55,14 @@ export const generateResetToken = async (
   return token
 }
 
-/**
- * Initiate password reset process
- */
-export const initiatePasswordReset = async (
-  db: D1Database,
-  kv: KVNamespace,
-  { email }: ForgotPasswordRequest,
-  baseUrl: string,
-  resendApiKey: string
-): Promise<void> => {
-  const drizzleDB = createDB({ DB: db } as CloudflareBindings)
-
-  const user = await drizzleDB
-    .select()
-    .from(schema.users)
-    .where(eq(schema.users.email, email))
-    .get()
+export const initiatePasswordReset = async ({
+  db,
+  kv,
+  email,
+  baseUrl,
+  resendApiKey,
+}: InitiatePasswordResetParams): Promise<void> => {
+  const user = await db.select().from(schema.users).where(eq(schema.users.email, email)).get()
 
   if (!user) {
     return
@@ -69,24 +72,24 @@ export const initiatePasswordReset = async (
     throw new ValidationError('Account uses social login')
   }
 
+  if (!(await _checkResetRateLimit(kv, email))) {
+    throw new RateLimitError('Too many reset attempts', {
+      resetIn: '1 hour',
+      maxAttempts: 3,
+    })
+  }
+
   const token = await generateResetToken(kv, user.id, email)
   const resetUrl = `${baseUrl}/auth/reset-password?token=${token}`
 
   const emailConfig = createEmailConfig(resendApiKey)
-  await emailConfig.sendEmail({
-    from: EMAIL_FROM,
+  await emailConfig.sendInitiatePasswordEmail({
     to: email,
-    subject: 'Password Reset Request',
-    html: createPasswordResetEmailTemplate({
-      firstName: user.firstName,
-      resetUrl,
-    }),
+    firstName: user.firstName,
+    resetUrl,
   })
 }
 
-/**
- * Validate password reset token
- */
 export const validateResetToken = async (
   kv: KVNamespace,
   token: string
@@ -107,21 +110,18 @@ export const validateResetToken = async (
   return tokenData
 }
 
-/**
- * Complete password reset
- */
-export const resetPassword = async (
-  db: D1Database,
-  kv: KVNamespace,
-  { token, password }: ResetPasswordRequest,
-  resendApiKey: string
-): Promise<void> => {
+export const resetPassword = async ({
+  db,
+  kv,
+  token,
+  newPassword,
+  resendApiKey,
+}: ResetPasswordParams): Promise<void> => {
   const tokenData = await validateResetToken(kv, token)
-  const drizzleDB = createDB({ DB: db } as CloudflareBindings)
 
-  const passwordHash = await hashPassword(password)
+  const passwordHash = await hashPassword(newPassword)
 
-  const result = await drizzleDB
+  const result = await db
     .update(schema.users)
     .set({
       password: passwordHash,
@@ -141,7 +141,7 @@ export const resetPassword = async (
     await kv.delete(key.name)
   }
 
-  const user = await drizzleDB
+  const user = await db
     .select()
     .from(schema.users)
     .where(eq(schema.users.id, tokenData.userId))
@@ -149,28 +149,21 @@ export const resetPassword = async (
 
   if (user) {
     const emailConfig = createEmailConfig(resendApiKey)
-    await emailConfig.sendEmail({
-      from: EMAIL_FROM,
+    await emailConfig.sendPasswordResetEmail({
       to: user.email,
-      subject: 'Password Reset Successful',
-      html: createPasswordResetSuccessfulTemplate(user.firstName),
+      firstName: user.firstName,
     })
   }
 }
 
-/**
- * Change password for authenticated user
- */
 export const changePassword = async (
-  db: D1Database,
+  db: DBType,
   kv: KVNamespace,
   userId: string,
   currentPassword: string,
   newPassword: string
 ): Promise<void> => {
-  const drizzleDB = createDB({ DB: db } as CloudflareBindings)
-
-  const user = await drizzleDB.select().from(schema.users).where(eq(schema.users.id, userId)).get()
+  const user = await db.select().from(schema.users).where(eq(schema.users.id, userId)).get()
 
   if (!user || !user.password) {
     throw new ResourceNotFoundError('User not found')
@@ -182,7 +175,7 @@ export const changePassword = async (
   }
 
   const passwordHash = await hashPassword(newPassword)
-  await drizzleDB
+  await db
     .update(schema.users)
     .set({
       password: passwordHash,
@@ -195,21 +188,4 @@ export const changePassword = async (
   for (const key of keys) {
     await kv.delete(key.name)
   }
-}
-
-/**
- * Check password reset rate limit
- */
-export const checkResetRateLimit = async (kv: KVNamespace, email: string): Promise<boolean> => {
-  const key = `reset_limit:${email}`
-  const attempts = await kv.get(key)
-
-  if (attempts && Number.parseInt(attempts) >= 3) {
-    return false
-  }
-
-  const current = attempts ? Number.parseInt(attempts) : 0
-  await kv.put(key, (current + 1).toString(), { expirationTtl: 3600 })
-
-  return true
 }

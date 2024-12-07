@@ -1,20 +1,13 @@
+import { ACCESS_TOKEN_EXPIRY } from '../constants/services'
 import { type JWTPayload, JWTPayloadSchema, type Token, TokenSchema } from '../types/auth'
 import { AuthenticationError, ValidationError } from '../types/error'
 import { generateId } from './crypto'
 
-const ACCESS_TOKEN_EXPIRY = 15 * 60
-
-/**
- * Encode data to base64url format
- */
-const base64UrlEncode = (data: string): string => {
+const _base64UrlEncode = (data: string): string => {
   return btoa(data).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-/**
- * Decode base64url to string
- */
-const base64UrlDecode = (data: string): string => {
+const _base64UrlDecode = (data: string): string => {
   if (!/^[A-Za-z0-9_-]+$/.test(data)) {
     throw new ValidationError('Invalid base64url format')
   }
@@ -24,18 +17,12 @@ const base64UrlDecode = (data: string): string => {
   return atob(base64)
 }
 
-/**
- * Generate JWT header
- */
-const generateHeader = () => ({
+const _generateHeader = () => ({
   alg: 'RS256',
   typ: 'JWT',
 })
 
-/**
- * Generate JWT token with provided payload
- */
-export const generateToken = async (
+const _generateToken = async (
   payload: Omit<JWTPayload, 'iat' | 'exp' | 'jti'>,
   privateKey: CryptoKey
 ): Promise<string> => {
@@ -51,9 +38,9 @@ export const generateToken = async (
     jti: generateId(),
   }
 
-  const header = generateHeader()
-  const headerBase64 = base64UrlEncode(JSON.stringify(header))
-  const payloadBase64 = base64UrlEncode(JSON.stringify(completePayload))
+  const header = _generateHeader()
+  const headerBase64 = _base64UrlEncode(JSON.stringify(header))
+  const payloadBase64 = _base64UrlEncode(JSON.stringify(completePayload))
   const signingInput = `${headerBase64}.${payloadBase64}`
 
   const signature = await crypto.subtle.sign(
@@ -65,15 +52,12 @@ export const generateToken = async (
     new TextEncoder().encode(signingInput)
   )
 
-  const signatureBase64 = base64UrlEncode(String.fromCharCode(...new Uint8Array(signature)))
+  const signatureBase64 = _base64UrlEncode(String.fromCharCode(...new Uint8Array(signature)))
 
   return `${headerBase64}.${payloadBase64}.${signatureBase64}`
 }
 
-/**
- * Verify and decode JWT token
- */
-export const verifyToken = async (token: string, publicKey: CryptoKey): Promise<JWTPayload> => {
+export const verifyJWTToken = async (token: string, publicKey: CryptoKey): Promise<JWTPayload> => {
   const tokenParts = token.split('.')
   if (tokenParts.length !== 3) {
     throw new ValidationError('Invalid token format')
@@ -82,7 +66,6 @@ export const verifyToken = async (token: string, publicKey: CryptoKey): Promise<
   const [headerB64, payloadB64, signatureB64] = tokenParts
   const signingInput = `${headerB64}.${payloadB64}`
 
-  // Verify signature
   const signatureData = atob(signatureB64.replace(/-/g, '+').replace(/_/g, '/'))
   const signatureArray = new Uint8Array(signatureData.length)
   for (let i = 0; i < signatureData.length; i++) {
@@ -103,8 +86,7 @@ export const verifyToken = async (token: string, publicKey: CryptoKey): Promise<
     throw new AuthenticationError('Invalid token signature')
   }
 
-  // Verify and decode payload
-  const payload = JSON.parse(base64UrlDecode(payloadB64))
+  const payload = JSON.parse(_base64UrlDecode(payloadB64))
   const now = Math.floor(Date.now() / 1000)
 
   if (payload.exp <= now) {
@@ -114,14 +96,11 @@ export const verifyToken = async (token: string, publicKey: CryptoKey): Promise<
   return JWTPayloadSchema.parse(payload)
 }
 
-/**
- * Generate authentication tokens
- */
 export const generateAuthTokens = async (
   payload: Omit<JWTPayload, 'iat' | 'exp' | 'jti'>,
   privateKey: CryptoKey
 ): Promise<Token> => {
-  const accessToken = await generateToken(payload, privateKey)
+  const accessToken = await _generateToken(payload, privateKey)
   const refreshToken = generateId()
 
   return TokenSchema.parse({
@@ -131,9 +110,6 @@ export const generateAuthTokens = async (
   })
 }
 
-/**
- * Check if token is blacklisted
- */
 export const isTokenBlacklisted = async (jti: string, kv: KVNamespace): Promise<boolean> => {
   if (!jti) {
     throw new ValidationError('JTI is required')
@@ -142,9 +118,6 @@ export const isTokenBlacklisted = async (jti: string, kv: KVNamespace): Promise<
   return blacklisted !== null
 }
 
-/**
- * Blacklist a token
- */
 export const blacklistToken = async (jti: string, exp: number, kv: KVNamespace): Promise<void> => {
   if (!jti || !exp) {
     throw new ValidationError('JTI and expiration are required')

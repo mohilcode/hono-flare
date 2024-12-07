@@ -6,18 +6,14 @@ import {
   TOKEN_PREFIX,
 } from '../constants/services'
 import type {
-  RateLimitInfo,
   VerificationResult,
   VerificationToken,
   VerificationTokenMetadata,
 } from '../types/auth'
-import { AuthenticationError, RateLimitError, ValidationError } from '../types/error'
+import { AuthenticationError, ValidationError } from '../types/error'
 import { generateId } from '../utils/crypto'
 
-/**
- * Generate verification token
- */
-export const generateVerificationToken = async (
+const _generateVerificationToken = async (
   kv: KVNamespace,
   userId: string,
   email: string,
@@ -43,9 +39,12 @@ export const generateVerificationToken = async (
   return token
 }
 
-/**
- * Verify token and return verification result
- */
+const _generateVerificationUrl = (token: string, baseUrl: string): string => {
+  const url = new URL('/auth/verify', baseUrl)
+  url.searchParams.set('token', token)
+  return url.toString()
+}
+
 export const verifyToken = async (kv: KVNamespace, token: string): Promise<VerificationResult> => {
   const data = await kv.get(`${TOKEN_PREFIX}${token}`)
 
@@ -96,46 +95,19 @@ export const verifyToken = async (kv: KVNamespace, token: string): Promise<Verif
   }
 }
 
-/**
- * Check rate limit for verification attempts
- */
-export const checkRateLimit = async (
-  kv: KVNamespace,
-  identifier: string
-): Promise<RateLimitInfo> => {
+export const checkRateLimit = async (kv: KVNamespace, identifier: string): Promise<boolean> => {
   const key = `${RATE_LIMIT_PREFIX}${identifier}`
   const current = await kv.get(key)
   const attempts = current ? Number.parseInt(current, 10) : 0
 
   if (attempts >= RATE_LIMIT_MAX) {
-    throw new RateLimitError('Too many verification attempts', {
-      remaining: 0,
-      reset: RATE_LIMIT_WINDOW,
-      limit: RATE_LIMIT_MAX,
-    })
+    return false
   }
 
   await kv.put(key, (attempts + 1).toString(), { expirationTtl: RATE_LIMIT_WINDOW })
-
-  return {
-    remaining: RATE_LIMIT_MAX - (attempts + 1),
-    reset: RATE_LIMIT_WINDOW,
-    limit: RATE_LIMIT_MAX,
-  }
+  return true
 }
 
-/**
- * Generate verification URL
- */
-export const generateVerificationUrl = (token: string, baseUrl: string): string => {
-  const url = new URL('/auth/verify', baseUrl)
-  url.searchParams.set('token', token)
-  return url.toString()
-}
-
-/**
- * Create verification token with rate limiting
- */
 export const createVerificationToken = async (
   kv: KVNamespace,
   userId: string,
@@ -145,16 +117,13 @@ export const createVerificationToken = async (
 ): Promise<{ token: string; verificationUrl: string }> => {
   await checkRateLimit(kv, email)
 
-  const token = await generateVerificationToken(kv, userId, email, metadata)
-  const verificationUrl = generateVerificationUrl(token, baseUrl)
+  const token = await _generateVerificationToken(kv, userId, email, metadata)
+  const verificationUrl = _generateVerificationUrl(token, baseUrl)
 
   return { token, verificationUrl }
 }
 
-/**
- * Validate token format
- */
-export const isValidToken = (token: string): boolean => {
+export const _isValidToken = (token: string): boolean => {
   const tokenRegex = /^[A-Za-z0-9_-]{21,}$/
   if (!tokenRegex.test(token)) {
     throw new ValidationError('Invalid token format')
@@ -162,10 +131,7 @@ export const isValidToken = (token: string): boolean => {
   return true
 }
 
-/**
- * Get all pending verification tokens for a user
- */
-export const getPendingVerifications = async (
+export const _getPendingVerifications = async (
   kv: KVNamespace,
   userId: string
 ): Promise<VerificationToken[]> => {
@@ -183,10 +149,7 @@ export const getPendingVerifications = async (
   return tokens
 }
 
-/**
- * Cancel verification token
- */
-export const cancelVerification = async (
+export const _cancelVerification = async (
   kv: KVNamespace,
   token: string,
   userId: string
@@ -206,10 +169,7 @@ export const cancelVerification = async (
   await kv.delete(`${TOKEN_PREFIX}${token}`)
 }
 
-/**
- * Clean up expired tokens
- */
-export const cleanupExpiredTokens = async (kv: KVNamespace): Promise<void> => {
+export const _cleanupExpiredTokens = async (kv: KVNamespace): Promise<void> => {
   const { keys } = await kv.list({ prefix: TOKEN_PREFIX })
   const now = Date.now()
 
@@ -222,16 +182,4 @@ export const cleanupExpiredTokens = async (kv: KVNamespace): Promise<void> => {
       }
     }
   }
-}
-
-export const verificationService = {
-  generateToken: generateVerificationToken,
-  verifyToken,
-  checkRateLimit,
-  generateVerificationUrl,
-  createVerificationToken,
-  isValidToken,
-  getPendingVerifications,
-  cancelVerification,
-  cleanupExpiredTokens,
 }

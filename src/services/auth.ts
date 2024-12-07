@@ -1,70 +1,112 @@
 import { eq } from 'drizzle-orm'
-import { MAX_SESSIONS_PER_USER, SESSION_EXPIRY } from '../constants/services'
-import { createDB } from '../db'
+import { MAX_SESSIONS_PER_USER, RATE_LIMIT_MAX, SESSION_EXPIRY } from '../constants/services'
+import type { DBType } from '../db'
 import * as schema from '../db/schema'
-import { createEmailConfig } from '../services/email'
-import { createVerificationToken } from '../services/verification'
+import {
+  createEmailConfig,
+  getEmailDomain,
+  isDisposableEmail,
+  validateEmail,
+} from '../services/email'
+import { checkRateLimit, createVerificationToken, verifyToken } from '../services/verification'
 import {
   AuthProviderEnum,
+  type GetCurrentSessionParams,
   type JWTPayload,
-  type LoginRequest,
-  type RegisterRequest,
+  JWTPayloadSchema,
+  type LoginResponse,
+  type LoginUserParams,
+  type LogoutUserParams,
+  type RefreshTokenParams,
+  type RegisterUserParams,
+  type ResendVerificationEmailParams,
   type Session,
+  type SessionInfo,
   SessionSchema,
   type Token,
   type User,
   UserRoleEnum,
   UserSchema,
+  type VerifyEmailTokenParams,
 } from '../types/auth'
-import { AuthenticationError, ConflictError, ResourceNotFoundError } from '../types/error'
-import { generateId, hashPassword, verifyPassword } from '../utils/crypto'
-import { blacklistToken, generateAuthTokens } from '../utils/jwt'
+import {
+  AuthenticationError,
+  ConflictError,
+  RateLimitError,
+  ResourceNotFoundError,
+  ValidationError,
+  validateOrThrow,
+} from '../types/error'
+import {
+  generateAuthKeyPair,
+  generateCsrfToken,
+  generateId,
+  hashPassword,
+  verifyPassword,
+} from '../utils/crypto'
+import { blacklistToken, generateAuthTokens, isTokenBlacklisted } from '../utils/jwt'
 
-/**
- * Create a new user account
- */
-export const registerUser = async (
-  db: D1Database,
-  kv: KVNamespace,
-  data: RegisterRequest,
-  baseUrl: string,
-  emailApiKey: string
-): Promise<User> => {
-  const drizzleDB = createDB({ DB: db } as CloudflareBindings)
+const _getUserById = async (db: DBType, userId: string): Promise<User | null> => {
+  const user = await db.select().from(schema.users).where(eq(schema.users.id, userId)).get()
 
-  const existingUser = await drizzleDB
+  if (!user) {
+    return null
+  }
+
+  const { password: _, ...userWithoutPassword } = user
+  return UserSchema.parse({
+    ...userWithoutPassword,
+    role: UserRoleEnum.USER,
+    provider: AuthProviderEnum.EMAIL,
+    emailVerified: user.emailVerified,
+  })
+}
+
+export const registerUser = async ({
+  db,
+  kv,
+  userData,
+  baseUrl,
+  resendApiKey,
+}: RegisterUserParams): Promise<User> => {
+  const existingUser = await db
     .select()
     .from(schema.users)
-    .where(eq(schema.users.email, data.email))
+    .where(eq(schema.users.email, userData.email))
     .get()
 
   if (existingUser) {
     throw new ConflictError('Email already registered')
   }
 
-  const passwordHash = await hashPassword(data.password)
+  const domain = getEmailDomain(userData.email)
+  if (await isDisposableEmail(domain)) {
+    throw new ValidationError('Disposable email addresses are not allowed')
+  }
+
+  const passwordHash = await hashPassword(userData.password)
   const now = new Date()
   const userId = generateId()
 
   const newUser = {
     id: userId,
-    email: data.email,
-    firstName: data.firstName,
-    lastName: data.lastName,
+    email: userData.email,
+    firstName: userData.firstName,
+    lastName: userData.lastName,
     password: passwordHash,
     createdAt: now,
     updatedAt: now,
     googleId: null,
   }
 
-  await drizzleDB.insert(schema.users).values(newUser)
+  await db.insert(schema.users).values(newUser)
 
-  const { verificationUrl } = await createVerificationToken(kv, userId, data.email, baseUrl)
+  const { verificationUrl } = await createVerificationToken(kv, userId, userData.email, baseUrl)
 
-  const emailConfig = createEmailConfig(emailApiKey)
+  const emailConfig = createEmailConfig(resendApiKey)
   await emailConfig.sendVerificationEmail({
-    to: data.email,
-    firstName: data.firstName,
+    to: userData.email,
+    firstName: userData.firstName,
     verificationUrl,
   })
 
@@ -77,23 +119,17 @@ export const registerUser = async (
   })
 }
 
-/**
- * Authenticate user and create session
- */
-export const loginUser = async (
-  db: D1Database,
-  kv: KVNamespace,
-  data: LoginRequest,
-  privateKey: CryptoKey,
-  userAgent?: string,
-  ipAddress?: string
-): Promise<{ user: User; token: Token; session: Session }> => {
-  const drizzleDB = createDB({ DB: db } as CloudflareBindings)
-
-  const user = await drizzleDB
+export const loginUser = async ({
+  db,
+  kv,
+  loginData,
+  userAgent,
+  ipAddress,
+}: LoginUserParams): Promise<LoginResponse> => {
+  const user = await db
     .select()
     .from(schema.users)
-    .where(eq(schema.users.email, data.email))
+    .where(eq(schema.users.email, loginData.email))
     .get()
 
   if (!user || !user.password) {
@@ -104,37 +140,38 @@ export const loginUser = async (
     throw new AuthenticationError('Please verify your email address before logging in')
   }
 
-  const isValid = await verifyPassword(data.password, user.password)
+  const isValid = await verifyPassword(loginData.password, user.password)
   if (!isValid) {
     throw new AuthenticationError('Invalid credentials')
   }
 
-  const session = await createSession(kv, user.id, userAgent, ipAddress)
-
+  const keyPair = await generateAuthKeyPair()
   const tokenPayload: Omit<JWTPayload, 'iat' | 'exp' | 'jti'> = {
     sub: user.id,
     email: user.email,
     role: UserRoleEnum.USER,
   }
 
-  const token = await generateAuthTokens(tokenPayload, privateKey)
+  const token = await generateAuthTokens(tokenPayload, keyPair.privateKey)
+  const session = await createSession(kv, user.id, userAgent, ipAddress)
+  const csrfToken = generateCsrfToken()
 
   const { password: _, ...userWithoutPassword } = user
+  const sanitizedUser = UserSchema.parse({
+    ...userWithoutPassword,
+    role: UserRoleEnum.USER,
+    provider: AuthProviderEnum.EMAIL,
+    emailVerified: true,
+  })
+
   return {
-    user: UserSchema.parse({
-      ...userWithoutPassword,
-      role: UserRoleEnum.USER,
-      provider: AuthProviderEnum.EMAIL,
-      emailVerified: true,
-    }),
+    user: sanitizedUser,
     token,
     session,
+    csrfToken,
   }
 }
 
-/**
- * Create a new session
- */
 export const createSession = async (
   kv: KVNamespace,
   userId: string,
@@ -167,9 +204,6 @@ export const createSession = async (
   return validatedSession
 }
 
-/**
- * Validate session
- */
 export const validateSession = async (
   kv: KVNamespace,
   sessionId: string,
@@ -191,75 +225,162 @@ export const validateSession = async (
   return session
 }
 
-/**
- * Logout user and invalidate session
- */
-export const logoutUser = async (
-  kv: KVNamespace,
-  sessionId: string,
-  userId: string,
-  jti: string,
-  exp: number
-): Promise<void> => {
+export const logoutUser = async ({
+  kv,
+  sessionId,
+  userId,
+  jti,
+  exp,
+}: LogoutUserParams): Promise<void> => {
   await kv.delete(`session:${userId}:${sessionId}`)
 
   await blacklistToken(jti, exp, kv)
 }
 
-/**
- * Get user by ID
- */
-export const getUserById = async (db: D1Database, userId: string): Promise<User | null> => {
-  const drizzleDB = createDB({ DB: db } as CloudflareBindings)
+export const refreshAccessToken = async ({
+  db,
+  kv,
+  refreshToken,
+}: RefreshTokenParams): Promise<Token> => {
+  const payload = validateOrThrow(JWTPayloadSchema, JSON.parse(atob(refreshToken.split('.')[1])))
 
-  const user = await drizzleDB.select().from(schema.users).where(eq(schema.users.id, userId)).get()
-
-  if (!user) {
-    return null
+  const isBlacklisted = await isTokenBlacklisted(payload.jti, kv)
+  if (isBlacklisted) {
+    throw new AuthenticationError('Token has been revoked')
   }
 
-  const { password: _, ...userWithoutPassword } = user
-  return UserSchema.parse({
-    ...userWithoutPassword,
-    role: UserRoleEnum.USER,
-    provider: AuthProviderEnum.EMAIL,
-    emailVerified: user.emailVerified,
-  })
-}
-
-/**
- * Validate refresh token and create new access token
- */
-export const refreshAccessToken = async (
-  db: D1Database,
-  kv: KVNamespace,
-  refreshToken: string,
-  userId: string,
-  privateKey: CryptoKey
-): Promise<Token> => {
-  const storedToken = await kv.get(`refresh:${userId}:${refreshToken}`)
-  if (!storedToken) {
-    throw new AuthenticationError('Invalid refresh token')
-  }
-
-  const user = await getUserById(db, userId)
+  const user = await _getUserById(db, payload.sub)
   if (!user) {
     throw new ResourceNotFoundError('User not found')
   }
 
-  const tokenPayload: Omit<JWTPayload, 'iat' | 'exp' | 'jti'> = {
-    sub: user.id,
-    email: user.email,
-    role: UserRoleEnum.USER,
-  }
+  const keyPair = await generateAuthKeyPair()
 
-  return await generateAuthTokens(tokenPayload, privateKey)
+  const token = await generateAuthTokens(
+    {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+    },
+    keyPair.privateKey
+  )
+
+  return token
 }
 
-/**
- * Get all active sessions for a user
- */
-export const getUserSessions = async (kv: KVNamespace, userId: string): Promise<Session[]> => {
+export const getCurrentSession = async ({
+  jwtPayload,
+  sessionId,
+  userId,
+}: GetCurrentSessionParams): Promise<SessionInfo> => {
+  return {
+    id: sessionId,
+    userId,
+    exp: jwtPayload.exp,
+    iat: jwtPayload.iat,
+    email: jwtPayload.email,
+    role: jwtPayload.role,
+  }
+}
+
+export const resendVerificationEmail = async ({
+  db,
+  kv,
+  email,
+  baseUrl,
+  resendApiKey,
+}: ResendVerificationEmailParams): Promise<void> => {
+  const domain = getEmailDomain(email)
+  if (await isDisposableEmail(domain)) {
+    throw new ValidationError('Disposable email addresses are not allowed')
+  }
+
+  if (!validateEmail(email)) {
+    throw new ValidationError('Invalid email format')
+  }
+
+  if (!(await checkRateLimit(kv, email))) {
+    throw new RateLimitError('Too many verification attempts', {
+      resetIn: '1 hour',
+      maxAttempts: RATE_LIMIT_MAX,
+    })
+  }
+
+  const user = await db.select().from(schema.users).where(eq(schema.users.email, email)).get()
+
+  if (!user) {
+    throw new ResourceNotFoundError('User not found')
+  }
+
+  if (user.emailVerified) {
+    return
+  }
+
+  const { verificationUrl } = await createVerificationToken(kv, user.id, email, baseUrl)
+
+  const emailConfig = createEmailConfig(resendApiKey)
+  await emailConfig.sendVerificationEmail({
+    to: email,
+    firstName: user.firstName,
+    verificationUrl,
+  })
+}
+
+export const verifyEmailToken = async ({
+  db,
+  kv,
+  token,
+  resendApiKey,
+}: VerifyEmailTokenParams): Promise<void> => {
+  const result = await verifyToken(kv, token)
+
+  if (!result.success) {
+    throw new ValidationError(result.error || 'Invalid verification token')
+  }
+
+  if (!result.userId) {
+    throw new ValidationError('Invalid verification token: missing user ID')
+  }
+
+  const updateResult = await db
+    .update(schema.users)
+    .set({
+      emailVerified: true,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.users.id, result.userId))
+    .run()
+
+  if (!updateResult.success) {
+    throw new ValidationError('Failed to verify email: user not found')
+  }
+
+  const user = await db.select().from(schema.users).where(eq(schema.users.id, result.userId)).get()
+
+  if (user) {
+    const emailConfig = createEmailConfig(resendApiKey)
+    await emailConfig.sendWelcomeEmail({
+      to: user.email,
+      firstName: user.firstName,
+    })
+  }
+}
+
+export const _revokeOtherSessions = async (
+  kv: KVNamespace,
+  userId: string,
+  currentSessionId: string
+): Promise<void> => {
+  const { keys } = await kv.list({ prefix: `session:${userId}:` })
+
+  for (const key of keys) {
+    if (!key.name.endsWith(currentSessionId)) {
+      await kv.delete(key.name)
+    }
+  }
+}
+
+export const _getUserSessions = async (kv: KVNamespace, userId: string): Promise<Session[]> => {
   const sessions: Session[] = []
   const { keys } = await kv.list({ prefix: `session:${userId}:` })
 
@@ -278,21 +399,4 @@ export const getUserSessions = async (kv: KVNamespace, userId: string): Promise<
   }
 
   return sessions
-}
-
-/**
- * Revoke all sessions for a user except the current one
- */
-export const revokeOtherSessions = async (
-  kv: KVNamespace,
-  userId: string,
-  currentSessionId: string
-): Promise<void> => {
-  const { keys } = await kv.list({ prefix: `session:${userId}:` })
-
-  for (const key of keys) {
-    if (!key.name.endsWith(currentSessionId)) {
-      await kv.delete(key.name)
-    }
-  }
 }

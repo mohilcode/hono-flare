@@ -1,4 +1,4 @@
-import type { Context } from 'hono'
+import type { Context, Next } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import type { z } from 'zod'
 import { isDevelopment } from '../constants/env'
@@ -13,7 +13,7 @@ import {
 } from '../types/error'
 import { HttpStatusCode } from '../types/http'
 
-export const errorLogger = async (err: Error | BaseError, c: Context): Promise<void> => {
+const _errorLogger = async (err: Error | BaseError, c: Context): Promise<void> => {
   const logContext: ErrorLogContext = {
     timestamp: new Date().toISOString(),
     path: c.req.path,
@@ -33,7 +33,7 @@ export const errorLogger = async (err: Error | BaseError, c: Context): Promise<v
 }
 
 export const errorHandler = async (err: Error, c: Context) => {
-  await errorLogger(err, c)
+  await _errorLogger(err, c)
 
   let response: ErrorResponse
   let status: number
@@ -77,8 +77,9 @@ export const errorHandler = async (err: Error, c: Context) => {
   return c.json(response, { status })
 }
 
-export const requestId = async (c: Context, next: () => Promise<void>) => {
+export const requestId = async (c: Context, next: Next) => {
   const requestId = crypto.randomUUID()
   c.set('requestId', requestId)
+  c.res.headers.set('X-Request-ID', requestId)
   await next()
 }

@@ -9,7 +9,9 @@ export const users = sqliteTable('users', {
   lastName: text('last_name').notNull(),
   password: text('password'),
   googleId: text('google_id').unique(),
+  provider: text('provider').notNull().default('email'),
   emailVerified: integer('email_verified', { mode: 'boolean' }).notNull().default(false),
+  picture: text('picture'),
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
 })

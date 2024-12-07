@@ -4,7 +4,7 @@ export interface R2Metadata {
   originalName?: string
   contentType?: string
   checksum?: string
-  tags?: string // JSON
+  tags?: string
 }
 
 export interface R2UploadOptions {

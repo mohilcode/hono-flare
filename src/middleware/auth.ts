@@ -2,7 +2,7 @@ import type { Context, Next } from 'hono'
 import { getCookie } from 'hono/cookie'
 import { BEARER_PREFIX, CSRF_COOKIE, CSRF_HEADER } from '../constants/services'
 import { validateSession } from '../services/auth'
-import type { JWTPayload } from '../types/auth'
+import type { AuthHonoContext } from '../types/auth'
 import {
   AuthenticationError,
   AuthorizationError,
@@ -10,32 +10,15 @@ import {
   ValidationError,
 } from '../types/error'
 import { verifyCsrfToken } from '../utils/crypto'
-import { isTokenBlacklisted, verifyToken } from '../utils/jwt'
+import { isTokenBlacklisted, verifyJWTToken } from '../utils/jwt'
 
-interface AuthHonoContext extends Context {
-  get(key: 'jwtPayload'): JWTPayload
-  get(key: 'userId'): string
-  get(key: 'sessionId'): string
-  get(key: 'user'): { emailVerified: boolean } & Record<string, unknown>
-  set(key: 'jwtPayload', value: JWTPayload): void
-  set(key: 'userId', value: string): void
-  set(key: 'sessionId', value: string): void
-  set(key: 'user', value: { emailVerified: boolean } & Record<string, unknown>): void
-}
-
-/**
- * Extract bearer token from Authorization header
- */
-const extractBearerToken = (authHeader: string | undefined): string => {
+const _extractBearerToken = (authHeader: string | undefined): string => {
   if (!authHeader?.startsWith(BEARER_PREFIX)) {
     throw new AuthenticationError('Invalid authorization header')
   }
   return authHeader.slice(BEARER_PREFIX.length)
 }
 
-/**
- * Rate limiting middleware
- */
 export const rateLimiter = async (c: Context, next: Next) => {
   const ip = c.req.header('CF-Connecting-IP') || 'unknown'
   const endpoint = `${c.req.method}:${c.req.path}`
@@ -64,18 +47,15 @@ export const rateLimiter = async (c: Context, next: Next) => {
   await next()
 }
 
-/**
- * JWT authentication middleware
- */
-export const jwtAuth = (publicKey: CryptoKey) => {
+const _jwtAuth = (publicKey: CryptoKey) => {
   return async (c: AuthHonoContext, next: Next) => {
     const authHeader = c.req.header('Authorization')
     if (!authHeader) {
       throw new AuthenticationError('Authorization header is required')
     }
 
-    const token = extractBearerToken(authHeader)
-    const payload = await verifyToken(token, publicKey)
+    const token = _extractBearerToken(authHeader)
+    const payload = await verifyJWTToken(token, publicKey)
 
     if (!payload.jti) {
       throw new AuthenticationError('Invalid token: missing JTI')
@@ -92,10 +72,7 @@ export const jwtAuth = (publicKey: CryptoKey) => {
   }
 }
 
-/**
- * Session authentication middleware
- */
-export const sessionAuth = async (c: AuthHonoContext, next: Next) => {
+const _sessionAuth = async (c: AuthHonoContext, next: Next) => {
   const sessionId = getCookie(c, 'session_id')
   if (!sessionId) {
     throw new AuthenticationError('No session found')
@@ -115,11 +92,7 @@ export const sessionAuth = async (c: AuthHonoContext, next: Next) => {
   await next()
 }
 
-/**
- * CSRF protection middleware
- */
 export const csrfProtection = async (c: Context, next: Next) => {
-  // Skip CSRF check for safe methods
   if (c.req.method === 'GET' || c.req.method === 'HEAD' || c.req.method === 'OPTIONS') {
     await next()
     return
@@ -139,10 +112,15 @@ export const csrfProtection = async (c: Context, next: Next) => {
   await next()
 }
 
-/**
- * Role-based access control middleware
- */
-export const requireRole = (allowedRoles: string[]) => {
+export const authenticate = (publicKey: CryptoKey) => {
+  return async (c: AuthHonoContext, next: Next) => {
+    await _jwtAuth(publicKey)(c, async () => {
+      await _sessionAuth(c, next)
+    })
+  }
+}
+
+export const _requireRole = (allowedRoles: string[]) => {
   return async (c: AuthHonoContext, next: Next) => {
     const payload = c.get('jwtPayload')
     if (!payload.role) {
@@ -160,10 +138,7 @@ export const requireRole = (allowedRoles: string[]) => {
   }
 }
 
-/**
- * Origin validation middleware
- */
-export const validateOrigin = (allowedOrigins: string[]) => {
+export const _validateOrigin = (allowedOrigins: string[]) => {
   return async (c: Context, next: Next) => {
     const origin = c.req.header('Origin')
     if (!origin) {
@@ -181,35 +156,11 @@ export const validateOrigin = (allowedOrigins: string[]) => {
   }
 }
 
-/**
- * Combine multiple authentication middlewares
- */
-export const authenticate = (publicKey: CryptoKey) => {
-  return async (c: AuthHonoContext, next: Next) => {
-    await jwtAuth(publicKey)(c, async () => {
-      await sessionAuth(c, next)
-    })
-  }
-}
-
-/**
- * Email verification requirement middleware
- */
-export const requireEmailVerified = async (c: AuthHonoContext, next: Next) => {
+export const _requireEmailVerified = async (c: AuthHonoContext, next: Next) => {
   const user = c.get('user')
   if (!user?.emailVerified) {
     throw new AuthenticationError('Email verification required')
   }
 
-  await next()
-}
-
-/**
- * Request ID middleware for tracking
- */
-export const requestId = async (c: Context, next: Next) => {
-  const requestId = crypto.randomUUID()
-  c.set('requestId', requestId)
-  c.res.headers.set('X-Request-ID', requestId)
   await next()
 }
