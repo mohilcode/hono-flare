@@ -32,5 +32,5 @@ export const COOKIE_OPTIONS = {
   secure: true,
   sameSite: 'Lax' as const,
   path: '/',
-  domain: 'mohil.dev'
+  domain: 'mohil.dev',
 }

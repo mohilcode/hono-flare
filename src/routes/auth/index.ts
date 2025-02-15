@@ -1,13 +1,13 @@
+import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { z } from 'zod'
-import { zValidator } from '@hono/zod-validator'
 import {
+  ACCESS_TOKEN_COOKIE,
   COOKIE_OPTIONS,
   CSRF_COOKIE,
   REFRESH_COOKIE,
   SESSION_COOKIE,
-  ACCESS_TOKEN_COOKIE
 } from '../../constants/services'
 import { createDB } from '../../db'
 import { authenticate, csrfProtection, rateLimiter } from '../../middleware/auth'
@@ -25,8 +25,8 @@ import {
   ForgotPasswordRequestSchema,
   LoginRequestSchema,
   RegisterRequestSchema,
-  ResetPasswordRequestSchema,
   ResendVerifyEmailRequestSchema,
+  ResetPasswordRequestSchema,
   type Variables,
 } from '../../types/auth'
 import { AuthenticationError, ValidationError } from '../../types/error'
@@ -40,10 +40,7 @@ const route = new Hono<{
 /**
  * Register new user
  */
-route.post('/register',
-  rateLimiter,
-  zValidator('json', RegisterRequestSchema),
-  async c => {
+route.post('/register', rateLimiter, zValidator('json', RegisterRequestSchema), async c => {
   try {
     const db = createDB(c.env)
     const validatedData = c.req.valid('json')
@@ -66,10 +63,7 @@ route.post('/register',
 /**
  * Login user
  */
-route.post('/login',
-  rateLimiter,
-  zValidator('json', LoginRequestSchema),
-  async c => {
+route.post('/login', rateLimiter, zValidator('json', LoginRequestSchema), async c => {
   try {
     const db = createDB(c.env)
     const validatedData = c.req.valid('json')
@@ -205,10 +199,7 @@ route.get('/session', async c => {
 /**
  * Resend verification email
  */
-route.post('/resend',
-  rateLimiter,
-  zValidator('json', ResendVerifyEmailRequestSchema),
-  async c => {
+route.post('/resend', rateLimiter, zValidator('json', ResendVerifyEmailRequestSchema), async c => {
   try {
     const db = createDB(c.env)
     const validatedData = c.req.valid('json')
@@ -259,57 +250,61 @@ route.get('/verify', async c => {
 /**
  * Forgot password request
  */
-route.post('/forgot-password',
+route.post(
+  '/forgot-password',
   rateLimiter,
   zValidator('json', ForgotPasswordRequestSchema),
   async c => {
-  try {
-    const db = createDB(c.env)
-    const validatedData = c.req.valid('json')
-    const baseUrl = new URL(c.req.url).origin
+    try {
+      const db = createDB(c.env)
+      const validatedData = c.req.valid('json')
+      const baseUrl = new URL(c.req.url).origin
 
-    await initiatePasswordReset({
-      db,
-      kv: c.env.KV,
-      email: validatedData.email,
-      baseUrl,
-      resendApiKey: c.env.RESEND_API_KEY,
-    })
+      await initiatePasswordReset({
+        db,
+        kv: c.env.KV,
+        email: validatedData.email,
+        baseUrl,
+        resendApiKey: c.env.RESEND_API_KEY,
+      })
 
-    return c.json({
-      message: 'If your email is registered, you will receive password reset instructions',
-    })
-  } catch (error) {
-    throw error
+      return c.json({
+        message: 'If your email is registered, you will receive password reset instructions',
+      })
+    } catch (error) {
+      throw error
+    }
   }
-})
+)
 
 /**
  * Reset password
  */
-route.post('/reset-password',
+route.post(
+  '/reset-password',
   rateLimiter,
   zValidator('json', ResetPasswordRequestSchema),
   async c => {
-  try {
-    const db = createDB(c.env)
-    const validatedData = c.req.valid('json')
+    try {
+      const db = createDB(c.env)
+      const validatedData = c.req.valid('json')
 
-    await resetPassword({
-      db,
-      kv: c.env.KV,
-      token: validatedData.token,
-      newPassword: validatedData.password,
-      resendApiKey: c.env.RESEND_API_KEY,
-    })
+      await resetPassword({
+        db,
+        kv: c.env.KV,
+        token: validatedData.token,
+        newPassword: validatedData.password,
+        resendApiKey: c.env.RESEND_API_KEY,
+      })
 
-    return c.json({
-      message: 'Password reset successful',
-    })
-  } catch (error) {
-    throw error
+      return c.json({
+        message: 'Password reset successful',
+      })
+    } catch (error) {
+      throw error
+    }
   }
-})
+)
 
 route.route('/google', googleRoutes)
 

@@ -1,24 +1,19 @@
 {
   "name": "hono-flare",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy --minify",
+    "dev": "pnpm db:migrate:preview && wrangler dev --remote",
+    "deploy": "pnpm db:migrate:prod && wrangler deploy --minify",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
-    "format": "biome format --write .",
     "lint": "biome lint .",
     "check": "biome check --write .",
     "db:generate": "drizzle-kit generate",
-    "db:migrate:local": "wrangler d1 migrations apply db-flare --local",
+    "db:migrate:preview": "wrangler d1 migrations apply db-flare --remote --preview",
     "db:migrate:prod": "wrangler d1 migrations apply db-flare --remote",
-    "db:init:local": "wrangler d1 execute db-flare --local --command='SELECT 1'",
-    "studio:local": "pnpm db:init:local && pnpm db:migrate:local && drizzle-kit studio --config=drizzle.config.ts",
-    "studio:remote": "REMOTE=true drizzle-kit studio --config=drizzle.config.ts",
-    "db:fresh": "rm -rf .wrangler/state/v3/d1 && pnpm db:init:local && pnpm db:migrate:local",
-    "kv:init:local": "wrangler kv:key put test-key test-value --binding KV --local",
-    "kv:clear": "rm -rf .wrangler/state/v3/kv",
-    "r2:init:local": "wrangler r2 bucket create r2-flare --local",
-    "r2:clear": "rm -rf .wrangler/state/v3/r2",
-    "dev:local": "pnpm db:migrate:local && pnpm dev"
+    "studio:preview": "drizzle-kit studio --config=drizzle.config.ts",
+    "studio:prod": "TARGET=prod drizzle-kit studio --config=drizzle.config.ts"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "pnpm run check"
   },
   "dependencies": {
     "@hono/oauth-providers": "^0.6.2",
@@ -33,6 +28,7 @@
     "better-sqlite3": "^11.6.0",
     "dotenv": "^16.4.5",
     "drizzle-kit": "^0.28.1",
+    "simple-git-hooks": "^2.11.1",
     "tsx": "^4.19.2",
     "wrangler": "^3.88.0"
   }

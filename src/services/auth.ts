@@ -33,15 +33,15 @@ import {
   ConflictError,
   RateLimitError,
   ResourceNotFoundError,
-  ValidationError
+  ValidationError,
 } from '../types/error'
+import { generateCsrfToken, generateId, hashPassword, verifyPassword } from '../utils/crypto'
 import {
-  generateCsrfToken,
-  generateId,
-  hashPassword,
-  verifyPassword,
-} from '../utils/crypto'
-import { blacklistToken, generateAuthTokens, isTokenBlacklisted, verifyJWTToken } from '../utils/jwt'
+  blacklistToken,
+  generateAuthTokens,
+  isTokenBlacklisted,
+  verifyJWTToken,
+} from '../utils/jwt'
 
 const _getUserById = async (db: DBType, userId: string): Promise<User | null> => {
   const user = await db.select().from(schema.users).where(eq(schema.users.id, userId)).get()
@@ -240,30 +240,26 @@ export const refreshAccessToken = async ({
   env,
   refreshToken,
 }: RefreshTokenParams): Promise<Token> => {
-  try {
-    const payload = await verifyJWTToken(refreshToken, env)
+  const payload = await verifyJWTToken(refreshToken, env)
 
-    const isBlacklisted = await isTokenBlacklisted(payload.jti, kv)
-    if (isBlacklisted) {
-      throw new AuthenticationError('Token has been revoked')
-    }
-
-    const user = await _getUserById(db, payload.sub)
-    if (!user) {
-      throw new ResourceNotFoundError('User not found')
-    }
-
-    return await generateAuthTokens(
-      {
-        sub: user.id,
-        email: user.email,
-        role: user.role,
-      },
-      env
-    )
-  } catch (error) {
-    throw new AuthenticationError('Invalid refresh token')
+  const isBlacklisted = await isTokenBlacklisted(payload.jti, kv)
+  if (isBlacklisted) {
+    throw new AuthenticationError('Token has been revoked')
   }
+
+  const user = await _getUserById(db, payload.sub)
+  if (!user) {
+    throw new ResourceNotFoundError('User not found')
+  }
+
+  return await generateAuthTokens(
+    {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+    },
+    env
+  )
 }
 
 export const getCurrentSession = async ({

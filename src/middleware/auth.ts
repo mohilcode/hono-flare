@@ -1,6 +1,12 @@
 import type { Context, Next } from 'hono'
 import { getCookie } from 'hono/cookie'
-import { BEARER_PREFIX, CSRF_COOKIE, SESSION_COOKIE, ACCESS_TOKEN_COOKIE, CSRF_HEADER } from '../constants/services'
+import {
+  ACCESS_TOKEN_COOKIE,
+  BEARER_PREFIX,
+  CSRF_COOKIE,
+  CSRF_HEADER,
+  SESSION_COOKIE,
+} from '../constants/services'
 import { validateSession } from '../services/auth'
 import type { AuthHonoContext } from '../types/auth'
 import {
@@ -74,35 +80,31 @@ export const authenticate = () => {
       throw new AuthenticationError('Authentication required')
     }
 
-    try {
-      const payload = await verifyJWTToken(accessToken, c.env)
+    const payload = await verifyJWTToken(accessToken, c.env)
 
-      if (!payload.jti) {
-        throw new AuthenticationError('Invalid token: missing JTI')
-      }
-
-      if (await isTokenBlacklisted(payload.jti, c.env.KV)) {
-        throw new AuthenticationError('Token has been revoked')
-      }
-
-      c.set('jwtPayload', payload)
-      c.set('userId', payload.sub)
-
-      const sessionId = getCookie(c, SESSION_COOKIE)
-      if (!sessionId) {
-        throw new AuthenticationError('No session found')
-      }
-
-      const session = await validateSession(c.env.KV, sessionId, payload.sub)
-      if (!session) {
-        throw new AuthenticationError('Invalid or expired session')
-      }
-
-      c.set('sessionId', sessionId)
-      await next()
-    } catch (error) {
-      throw new AuthenticationError('Invalid token')
+    if (!payload.jti) {
+      throw new AuthenticationError('Invalid token: missing JTI')
     }
+
+    if (await isTokenBlacklisted(payload.jti, c.env.KV)) {
+      throw new AuthenticationError('Token has been revoked')
+    }
+
+    c.set('jwtPayload', payload)
+    c.set('userId', payload.sub)
+
+    const sessionId = getCookie(c, SESSION_COOKIE)
+    if (!sessionId) {
+      throw new AuthenticationError('No session found')
+    }
+
+    const session = await validateSession(c.env.KV, sessionId, payload.sub)
+    if (!session) {
+      throw new AuthenticationError('Invalid or expired session')
+    }
+
+    c.set('sessionId', sessionId)
+    await next()
   }
 }
 

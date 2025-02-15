@@ -1,5 +1,5 @@
-import { generateKeyPair } from 'crypto'
-import { promisify } from 'util'
+import { generateKeyPair } from 'node:crypto'
+import { promisify } from 'node:util'
 
 const generateKeyPairAsync = promisify(generateKeyPair)
 
@@ -15,9 +15,8 @@ async function generateKeys() {
       format: 'pem',
     },
   })
-
-  console.log('Private Key:', privateKey)
-  console.log('Public Key:', publicKey)
+  console.info('Private Key:', privateKey)
+  console.info('Public Key:', publicKey)
 }
 
 generateKeys()
