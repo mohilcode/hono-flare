@@ -6,7 +6,7 @@ import * as schema from './schema'
 export const createDB = (env: CloudflareBindings) => {
   return drizzle(env.DB, {
     schema,
-    logger: isDevelopment(env.ENV),
+    logger: isDevelopment,
   })
 }
 

@@ -3,29 +3,37 @@ import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { prettyJSON } from 'hono/pretty-json'
 import { secureHeaders } from 'hono/secure-headers'
-import { isDevelopment } from './constants/env'
-import { errorHandler, requestId } from './middleware/error'
+import { requestId } from 'hono/request-id'
+import type { RequestIdVariables } from 'hono/request-id'
+import { isDevelopment, isProduction, LOCALHOST, PRODUCTION } from './constants/env'
+import { errorHandler } from './middleware/error'
 import { registerRoutes } from './routes'
 import { ResourceNotFoundError } from './types/error'
 
-const app = new Hono<{ Bindings: CloudflareBindings }>()
+const app = new Hono<{
+  Bindings: CloudflareBindings
+  Variables: RequestIdVariables
+}>()
 
 app.use('*', logger())
-app.use('*', requestId)
-
-app.use(
-  '*',
-  cors({
-    origin: process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : 'https://mohil.dev',
-    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
-    credentials: true,
-    maxAge: 600,
-  })
-)
+app.use('*', requestId())
 
 app.use('*', async (c, next) => {
-  if (isDevelopment(c.env.ENV)) {
+  return cors({
+    origin: isProduction ? PRODUCTION : LOCALHOST,
+    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-CSRF-Token'
+    ],
+    credentials: true,
+    maxAge: 86400
+  })(c, next)
+})
+
+app.use('*', async (c, next) => {
+  if (isDevelopment) {
     return prettyJSON()(c, next)
   }
   await next()
@@ -35,13 +43,13 @@ app.get('/health', c =>
   c.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    env: c.env.ENV,
+    env: process.env.NODE_ENV,
   })
 )
 
 app.use('*', (c, next) => {
   return secureHeaders({
-    strictTransportSecurity: isDevelopment(c.env.ENV)
+    strictTransportSecurity: isDevelopment
       ? false
       : 'max-age=31536000; includeSubDomains; preload',
     contentSecurityPolicy: {

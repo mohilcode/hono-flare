@@ -1,3 +1,5 @@
+import { isProduction, PRODUCTION } from '../constants/env'
+
 export const RESEND_API_URL = 'https://api.resend.com'
 
 export const BEARER_PREFIX = 'Bearer '
@@ -27,10 +29,12 @@ export const ACCESS_TOKEN_EXPIRY = 15 * 60
 
 export const EMAIL_FROM = 'Upresume <mohil@account.upresume.io>'
 
+const DOMAIN = new URL(PRODUCTION).hostname
+
 export const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: true,
+  secure: isProduction,
   sameSite: 'Lax' as const,
   path: '/',
-  domain: 'mohil.dev',
+  domain: isProduction ? DOMAIN : undefined,
 }

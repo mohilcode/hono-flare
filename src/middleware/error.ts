@@ -1,4 +1,4 @@
-import type { Context, Next } from 'hono'
+import type { Context } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import type { z } from 'zod'
 import { isDevelopment } from '../constants/env'
@@ -50,7 +50,7 @@ export const errorHandler = async (err: Error, c: Context) => {
         name: err.name,
         ...(err.getResponse && { response: err.getResponse() }),
       },
-      ...(isDevelopment(c.env.ENV) && { stack: err.stack }),
+      ...(isDevelopment && { stack: err.stack }),
       timestamp: new Date().toISOString(),
     }
     status = err.status
@@ -70,16 +70,9 @@ export const errorHandler = async (err: Error, c: Context) => {
     status = HttpStatusCode.INTERNAL_SERVER_ERROR
   }
 
-  if (isDevelopment(c.env.ENV)) {
+  if (isDevelopment) {
     response.stack = err.stack
   }
 
   return c.json(response, { status })
-}
-
-export const requestId = async (c: Context, next: Next) => {
-  const requestId = crypto.randomUUID()
-  c.set('requestId', requestId)
-  c.res.headers.set('X-Request-ID', requestId)
-  await next()
 }
