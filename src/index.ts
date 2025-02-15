@@ -35,6 +35,10 @@ app.use('*', async (c, next) => {
   await next()
 })
 
+app.get('/', c => {
+  return c.text('Hello, Universe!')
+})
+
 app.get('/health', c =>
   c.json({
     status: 'ok',
