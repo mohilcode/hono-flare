@@ -3,14 +3,14 @@
   "scripts": {
     "dev": "pnpm db:migrate:preview && NODE_ENV=development wrangler dev --remote",
     "deploy": "pnpm db:migrate:prod && NODE_ENV=production wrangler deploy --minify",
-    "cf-typegen": "wrangler types --env-interface CloudflareBindings",
+    "types:cf": "wrangler types ./env.d.ts --env-interface CloudflareBindings",
     "lint": "biome lint .",
     "check": "biome check --write .",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate:preview": "wrangler d1 migrations apply db-flare --remote --preview",
-    "db:migrate:prod": "wrangler d1 migrations apply db-flare --remote",
-    "studio:preview": "drizzle-kit studio --config=drizzle.config.ts",
-    "studio:prod": "TARGET=prod drizzle-kit studio --config=drizzle.config.ts"
+    "db:schema": "drizzle-kit generate",
+    "db:migrate:dev": "wrangler d1 migrations apply db-flare --remote --preview",
+    "db:migrate": "wrangler d1 migrations apply db-flare --remote",
+    "db:studio:dev": "drizzle-kit studio --config=drizzle.config.ts",
+    "db:studio": "TARGET=prod drizzle-kit studio --config=drizzle.config.ts"
   },
   "simple-git-hooks": {
     "pre-commit": "pnpm run check"
