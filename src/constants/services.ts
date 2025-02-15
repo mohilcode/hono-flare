@@ -1,4 +1,4 @@
-import { isProduction, PRODUCTION } from '../constants/env'
+import { PRODUCTION, isProduction } from '../constants/env'
 
 export const RESEND_API_URL = 'https://api.resend.com'
 

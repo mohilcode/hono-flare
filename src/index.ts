@@ -2,10 +2,10 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { prettyJSON } from 'hono/pretty-json'
-import { secureHeaders } from 'hono/secure-headers'
 import { requestId } from 'hono/request-id'
 import type { RequestIdVariables } from 'hono/request-id'
-import { isDevelopment, isProduction, LOCALHOST, PRODUCTION } from './constants/env'
+import { secureHeaders } from 'hono/secure-headers'
+import { LOCALHOST, PRODUCTION, isDevelopment, isProduction } from './constants/env'
 import { errorHandler } from './middleware/error'
 import { registerRoutes } from './routes'
 import { ResourceNotFoundError } from './types/error'
@@ -22,13 +22,9 @@ app.use('*', async (c, next) => {
   return cors({
     origin: isProduction ? PRODUCTION : LOCALHOST,
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowHeaders: [
-      'Content-Type',
-      'Authorization',
-      'X-CSRF-Token'
-    ],
+    allowHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
     credentials: true,
-    maxAge: 86400
+    maxAge: 86400,
   })(c, next)
 })
 
@@ -49,9 +45,7 @@ app.get('/health', c =>
 
 app.use('*', (c, next) => {
   return secureHeaders({
-    strictTransportSecurity: isDevelopment
-      ? false
-      : 'max-age=31536000; includeSubDomains; preload',
+    strictTransportSecurity: isDevelopment ? false : 'max-age=31536000; includeSubDomains; preload',
     contentSecurityPolicy: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", 'https://cdnjs.cloudflare.com'],
