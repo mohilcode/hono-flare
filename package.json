@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@hono/oauth-providers": "^0.6.2",
+    "@hono/zod-validator": "^0.4.3",
     "drizzle-orm": "^0.36.4",
     "hono": "^4.6.12"
   },
@@ -32,6 +33,7 @@
     "better-sqlite3": "^11.6.0",
     "dotenv": "^16.4.5",
     "drizzle-kit": "^0.28.1",
+    "tsx": "^4.19.2",
     "wrangler": "^3.88.0"
   }
 }

@@ -3,6 +3,27 @@ import { type JWTPayload, JWTPayloadSchema, type Token, TokenSchema } from '../t
 import { AuthenticationError, ValidationError } from '../types/error'
 import { generateId } from './crypto'
 
+// Key cache
+let _privateKey: CryptoKey | null = null
+let _publicKey: CryptoKey | null = null
+
+const _pemToBuffer = (pem: string): ArrayBuffer => {
+  const base64 = pem
+    .replace(/-----BEGIN.*?-----/g, '')
+    .replace(/-----END.*?-----/g, '')
+    .replace(/\s+/g, '')
+
+  const binary = atob(base64)
+  const buffer = new ArrayBuffer(binary.length)
+  const bytes = new Uint8Array(buffer)
+
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+
+  return buffer
+}
+
 const _base64UrlEncode = (data: string): string => {
   return btoa(data).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
@@ -22,14 +43,56 @@ const _generateHeader = () => ({
   typ: 'JWT',
 })
 
+const _importKeys = async (env: CloudflareBindings) => {
+  if (!_privateKey || !_publicKey) {
+    const privateKeyBuffer = _pemToBuffer(env.JWT_PRIVATE_KEY)
+    const publicKeyBuffer = _pemToBuffer(env.JWT_PUBLIC_KEY)
+
+    _privateKey = await crypto.subtle.importKey(
+      'pkcs8',
+      privateKeyBuffer,
+      {
+        name: 'RSASSA-PKCS1-v1_5',
+        hash: { name: 'SHA-256' },
+      },
+      true,
+      ['sign']
+    )
+
+    _publicKey = await crypto.subtle.importKey(
+      'spki',
+      publicKeyBuffer,
+      {
+        name: 'RSASSA-PKCS1-v1_5',
+        hash: { name: 'SHA-256' },
+      },
+      true,
+      ['verify']
+    )
+  }
+
+  return { privateKey: _privateKey, publicKey: _publicKey }
+}
+
+export const getSigningKey = async (env: CloudflareBindings): Promise<CryptoKey> => {
+  const { privateKey } = await _importKeys(env)
+  return privateKey
+}
+
+export const getVerificationKey = async (env: CloudflareBindings): Promise<CryptoKey> => {
+  const { publicKey } = await _importKeys(env)
+  return publicKey
+}
+
 const _generateToken = async (
   payload: Omit<JWTPayload, 'iat' | 'exp' | 'jti'>,
-  privateKey: CryptoKey
+  env: CloudflareBindings
 ): Promise<string> => {
   if (!payload.sub || !payload.email) {
     throw new ValidationError('Invalid payload: sub and email are required')
   }
 
+  const privateKey = await getSigningKey(env)
   const now = Math.floor(Date.now() / 1000)
   const completePayload = {
     ...payload,
@@ -57,7 +120,10 @@ const _generateToken = async (
   return `${headerBase64}.${payloadBase64}.${signatureBase64}`
 }
 
-export const verifyJWTToken = async (token: string, publicKey: CryptoKey): Promise<JWTPayload> => {
+export const verifyJWTToken = async (
+  token: string,
+  env: CloudflareBindings
+): Promise<JWTPayload> => {
   const tokenParts = token.split('.')
   if (tokenParts.length !== 3) {
     throw new ValidationError('Invalid token format')
@@ -72,6 +138,7 @@ export const verifyJWTToken = async (token: string, publicKey: CryptoKey): Promi
     signatureArray[i] = signatureData.charCodeAt(i)
   }
 
+  const publicKey = await getVerificationKey(env)
   const isValid = await crypto.subtle.verify(
     {
       name: 'RSASSA-PKCS1-v1_5',
@@ -98,9 +165,9 @@ export const verifyJWTToken = async (token: string, publicKey: CryptoKey): Promi
 
 export const generateAuthTokens = async (
   payload: Omit<JWTPayload, 'iat' | 'exp' | 'jti'>,
-  privateKey: CryptoKey
+  env: CloudflareBindings
 ): Promise<Token> => {
-  const accessToken = await _generateToken(payload, privateKey)
+  const accessToken = await _generateToken(payload, env)
   const refreshToken = generateId()
 
   return TokenSchema.parse({

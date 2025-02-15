@@ -1,11 +1,13 @@
 import { Hono } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import { z } from 'zod'
+import { zValidator } from '@hono/zod-validator'
 import {
   COOKIE_OPTIONS,
   CSRF_COOKIE,
   REFRESH_COOKIE,
   SESSION_COOKIE,
+  ACCESS_TOKEN_COOKIE
 } from '../../constants/services'
 import { createDB } from '../../db'
 import { authenticate, csrfProtection, rateLimiter } from '../../middleware/auth'
@@ -24,11 +26,10 @@ import {
   LoginRequestSchema,
   RegisterRequestSchema,
   ResetPasswordRequestSchema,
+  ResendVerifyEmailRequestSchema,
   type Variables,
 } from '../../types/auth'
 import { AuthenticationError, ValidationError } from '../../types/error'
-import { validateOrThrow } from '../../types/error'
-import { generateAuthKeyPair } from '../../utils/crypto'
 import googleRoutes from './google'
 
 const route = new Hono<{
@@ -39,11 +40,13 @@ const route = new Hono<{
 /**
  * Register new user
  */
-route.post('/register', rateLimiter, async c => {
+route.post('/register',
+  rateLimiter,
+  zValidator('json', RegisterRequestSchema),
+  async c => {
   try {
     const db = createDB(c.env)
-    const data = await c.req.json()
-    const validatedData = validateOrThrow(RegisterRequestSchema, data)
+    const validatedData = c.req.valid('json')
     const baseUrl = new URL(c.req.url).origin
 
     const user = await registerUser({
@@ -63,15 +66,18 @@ route.post('/register', rateLimiter, async c => {
 /**
  * Login user
  */
-route.post('/login', rateLimiter, async c => {
+route.post('/login',
+  rateLimiter,
+  zValidator('json', LoginRequestSchema),
+  async c => {
   try {
     const db = createDB(c.env)
-    const data = await c.req.json()
-    const validatedData = validateOrThrow(LoginRequestSchema, data)
+    const validatedData = c.req.valid('json')
 
     const { user, token, session, csrfToken } = await loginUser({
       db,
       kv: c.env.KV,
+      env: c.env,
       loginData: validatedData,
       userAgent: c.req.header('User-Agent'),
       ipAddress: c.req.header('CF-Connecting-IP'),
@@ -84,6 +90,11 @@ route.post('/login', rateLimiter, async c => {
 
     setCookie(c, CSRF_COOKIE, csrfToken, COOKIE_OPTIONS)
 
+    setCookie(c, ACCESS_TOKEN_COOKIE, token.accessToken, {
+      ...COOKIE_OPTIONS,
+      maxAge: token.expiresIn,
+    })
+
     if (token.refreshToken) {
       setCookie(c, REFRESH_COOKIE, token.refreshToken, {
         ...COOKIE_OPTIONS,
@@ -94,7 +105,6 @@ route.post('/login', rateLimiter, async c => {
     return c.json({
       user,
       token: {
-        accessToken: token.accessToken,
         expiresIn: token.expiresIn,
       },
       csrfToken,
@@ -109,8 +119,7 @@ route.post('/login', rateLimiter, async c => {
  */
 route.post('/logout', async c => {
   try {
-    const keyPair = await generateAuthKeyPair()
-    await authenticate(keyPair.publicKey)(c, async () => {})
+    await authenticate()(c, async () => {})
     await csrfProtection(c, async () => {})
 
     await logoutUser({
@@ -124,6 +133,7 @@ route.post('/logout', async c => {
     deleteCookie(c, SESSION_COOKIE)
     deleteCookie(c, CSRF_COOKIE)
     deleteCookie(c, REFRESH_COOKIE)
+    deleteCookie(c, ACCESS_TOKEN_COOKIE)
 
     return c.json({ message: 'Logged out successfully' })
   } catch (error) {
@@ -146,6 +156,7 @@ route.post('/refresh', rateLimiter, async c => {
     const token = await refreshAccessToken({
       db,
       kv: c.env.KV,
+      env: c.env,
       refreshToken,
     })
 
@@ -155,6 +166,11 @@ route.post('/refresh', rateLimiter, async c => {
         maxAge: 30 * 24 * 60 * 60,
       })
     }
+
+    setCookie(c, ACCESS_TOKEN_COOKIE, token.accessToken, {
+      ...COOKIE_OPTIONS,
+      maxAge: token.expiresIn * 1000,
+    })
 
     return c.json({
       token: {
@@ -172,8 +188,7 @@ route.post('/refresh', rateLimiter, async c => {
  */
 route.get('/session', async c => {
   try {
-    const keyPair = await generateAuthKeyPair()
-    await authenticate(keyPair.publicKey)(c, async () => {})
+    await authenticate()(c, async () => {})
 
     const sessionInfo = await getCurrentSession({
       jwtPayload: c.get('jwtPayload'),
@@ -190,17 +205,20 @@ route.get('/session', async c => {
 /**
  * Resend verification email
  */
-route.post('/resend', rateLimiter, async c => {
+route.post('/resend',
+  rateLimiter,
+  zValidator('json', ResendVerifyEmailRequestSchema),
+  async c => {
   try {
     const db = createDB(c.env)
-    const { email } = validateOrThrow(z.object({ email: z.string().email() }), await c.req.json())
+    const validatedData = c.req.valid('json')
 
     const baseUrl = new URL(c.req.url).origin
 
     await resendVerificationEmail({
       db,
       kv: c.env.KV,
-      email,
+      email: validatedData.email,
       baseUrl,
       resendApiKey: c.env.RESEND_API_KEY,
     })
@@ -241,11 +259,13 @@ route.get('/verify', async c => {
 /**
  * Forgot password request
  */
-route.post('/forgot-password', rateLimiter, async c => {
+route.post('/forgot-password',
+  rateLimiter,
+  zValidator('json', ForgotPasswordRequestSchema),
+  async c => {
   try {
     const db = createDB(c.env)
-    const data = await c.req.json()
-    const validatedData = validateOrThrow(ForgotPasswordRequestSchema, data)
+    const validatedData = c.req.valid('json')
     const baseUrl = new URL(c.req.url).origin
 
     await initiatePasswordReset({
@@ -267,11 +287,13 @@ route.post('/forgot-password', rateLimiter, async c => {
 /**
  * Reset password
  */
-route.post('/reset-password', rateLimiter, async c => {
+route.post('/reset-password',
+  rateLimiter,
+  zValidator('json', ResetPasswordRequestSchema),
+  async c => {
   try {
     const db = createDB(c.env)
-    const data = await c.req.json()
-    const validatedData = validateOrThrow(ResetPasswordRequestSchema, data)
+    const validatedData = c.req.valid('json')
 
     await resetPassword({
       db,

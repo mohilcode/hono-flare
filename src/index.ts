@@ -12,7 +12,17 @@ const app = new Hono<{ Bindings: CloudflareBindings }>()
 
 app.use('*', logger())
 app.use('*', requestId)
-app.use('*', cors())
+
+app.use(
+  '*',
+  cors({
+    origin: process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : 'https://mohil.dev',
+    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
+    credentials: true,
+    maxAge: 600,
+  })
+)
 
 app.use('*', async (c, next) => {
   if (isDevelopment(c.env.ENV)) {

@@ -9,4 +9,6 @@ interface CloudflareBindings {
   RESEND_API_KEY: string
   GOOGLE_CLIENT_ID: string
   GOOGLE_CLIENT_SECRET: string
+  JWT_PRIVATE_KEY: string
+  JWT_PUBLIC_KEY: string
 }

@@ -5,7 +5,7 @@ import { COOKIE_OPTIONS, CSRF_COOKIE, SESSION_COOKIE } from '../../constants/ser
 import { createDB } from '../../db'
 import { rateLimiter } from '../../middleware/auth'
 import { handleGoogleAuth } from '../../services/google'
-import { generateAuthKeyPair, generateCsrfToken } from '../../utils/crypto'
+import { generateCsrfToken } from '../../utils/crypto'
 
 const route = new Hono<{ Bindings: CloudflareBindings }>()
 
@@ -52,11 +52,11 @@ route.get('/callback', async (c, next) => {
   }
 
   const db = createDB(c.env)
-  const keyPair = await generateAuthKeyPair()
 
   const { user, token, session } = await handleGoogleAuth(
     db,
     c.env.KV,
+    c.env,
     {
       id: googleUser.id,
       email: googleUser.email,
@@ -67,7 +67,6 @@ route.get('/callback', async (c, next) => {
       picture: googleUser.picture || '',
       locale: googleUser.locale || 'en',
     },
-    keyPair.privateKey,
     {
       userAgent: c.req.header('User-Agent'),
       ipAddress: c.req.header('CF-Connecting-IP'),

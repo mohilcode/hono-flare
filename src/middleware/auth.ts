@@ -1,6 +1,6 @@
 import type { Context, Next } from 'hono'
 import { getCookie } from 'hono/cookie'
-import { BEARER_PREFIX, CSRF_COOKIE, CSRF_HEADER } from '../constants/services'
+import { BEARER_PREFIX, CSRF_COOKIE, SESSION_COOKIE, ACCESS_TOKEN_COOKIE, CSRF_HEADER } from '../constants/services'
 import { validateSession } from '../services/auth'
 import type { AuthHonoContext } from '../types/auth'
 import {
@@ -47,51 +47,6 @@ export const rateLimiter = async (c: Context, next: Next) => {
   await next()
 }
 
-const _jwtAuth = (publicKey: CryptoKey) => {
-  return async (c: AuthHonoContext, next: Next) => {
-    const authHeader = c.req.header('Authorization')
-    if (!authHeader) {
-      throw new AuthenticationError('Authorization header is required')
-    }
-
-    const token = _extractBearerToken(authHeader)
-    const payload = await verifyJWTToken(token, publicKey)
-
-    if (!payload.jti) {
-      throw new AuthenticationError('Invalid token: missing JTI')
-    }
-
-    if (await isTokenBlacklisted(payload.jti, c.env.KV)) {
-      throw new AuthenticationError('Token has been revoked')
-    }
-
-    c.set('jwtPayload', payload)
-    c.set('userId', payload.sub)
-
-    await next()
-  }
-}
-
-const _sessionAuth = async (c: AuthHonoContext, next: Next) => {
-  const sessionId = getCookie(c, 'session_id')
-  if (!sessionId) {
-    throw new AuthenticationError('No session found')
-  }
-
-  const userId = c.get('userId')
-  if (!userId) {
-    throw new AuthenticationError('User ID not found in context')
-  }
-
-  const session = await validateSession(c.env.KV, sessionId, userId)
-  if (!session) {
-    throw new AuthenticationError('Invalid or expired session')
-  }
-
-  c.set('sessionId', sessionId)
-  await next()
-}
-
 export const csrfProtection = async (c: Context, next: Next) => {
   if (c.req.method === 'GET' || c.req.method === 'HEAD' || c.req.method === 'OPTIONS') {
     await next()
@@ -112,11 +67,42 @@ export const csrfProtection = async (c: Context, next: Next) => {
   await next()
 }
 
-export const authenticate = (publicKey: CryptoKey) => {
+export const authenticate = () => {
   return async (c: AuthHonoContext, next: Next) => {
-    await _jwtAuth(publicKey)(c, async () => {
-      await _sessionAuth(c, next)
-    })
+    const accessToken = getCookie(c, ACCESS_TOKEN_COOKIE)
+    if (!accessToken) {
+      throw new AuthenticationError('Authentication required')
+    }
+
+    try {
+      const payload = await verifyJWTToken(accessToken, c.env)
+
+      if (!payload.jti) {
+        throw new AuthenticationError('Invalid token: missing JTI')
+      }
+
+      if (await isTokenBlacklisted(payload.jti, c.env.KV)) {
+        throw new AuthenticationError('Token has been revoked')
+      }
+
+      c.set('jwtPayload', payload)
+      c.set('userId', payload.sub)
+
+      const sessionId = getCookie(c, SESSION_COOKIE)
+      if (!sessionId) {
+        throw new AuthenticationError('No session found')
+      }
+
+      const session = await validateSession(c.env.KV, sessionId, payload.sub)
+      if (!session) {
+        throw new AuthenticationError('Invalid or expired session')
+      }
+
+      c.set('sessionId', sessionId)
+      await next()
+    } catch (error) {
+      throw new AuthenticationError('Invalid token')
+    }
   }
 }
 

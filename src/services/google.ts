@@ -9,8 +9,8 @@ import { createSession } from './auth'
 export const handleGoogleAuth = async (
   db: DBType,
   kv: KVNamespace,
+  env: CloudflareBindings,
   googleUser: GoogleUser,
-  privateKey: CryptoKey,
   metadata?: AuthMetadata
 ) => {
   let user = await db
@@ -91,7 +91,7 @@ export const handleGoogleAuth = async (
       email: user.email,
       role: 'user',
     },
-    privateKey
+    env
   )
 
   return { user, token, session }

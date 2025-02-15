@@ -11,9 +11,10 @@ export const RATE_LIMIT_PASSWORD_RESET = 'reset_limit:'
 export const RATE_LIMIT_WINDOW = 60 * 60
 export const RATE_LIMIT_MAX = 5
 
-export const SESSION_COOKIE = 'session_id'
+export const SESSION_COOKIE = 'session-id'
 export const CSRF_COOKIE = 'csrf-token'
 export const REFRESH_COOKIE = 'refresh-token'
+export const ACCESS_TOKEN_COOKIE = 'access-token'
 export const SESSION_EXPIRY = 7 * 24 * 60 * 60
 export const MAX_SESSIONS_PER_USER = 5
 
@@ -31,4 +32,5 @@ export const COOKIE_OPTIONS = {
   secure: true,
   sameSite: 'Lax' as const,
   path: '/',
+  domain: 'mohil.dev'
 }

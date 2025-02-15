@@ -18,7 +18,7 @@ export const UserSchema = z.object({
   firstName: z.string().min(1).max(50),
   lastName: z.string().min(1).max(50),
   passwordHash: z.string().optional(),
-  googleId: z.string().optional(),
+  googleId: z.string().nullable().optional(),
   role: z.enum([UserRoleEnum.USER, UserRoleEnum.ADMIN]).default(UserRoleEnum.USER),
   provider: z
     .enum([AuthProviderEnum.EMAIL, AuthProviderEnum.GOOGLE])
@@ -57,6 +57,10 @@ export const RegisterRequestSchema = z.object({
 export const LoginRequestSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+})
+
+export const ResendVerifyEmailRequestSchema = z.object({
+  email: z.string().email(),
 })
 
 export const ForgotPasswordRequestSchema = z.object({
@@ -217,6 +221,7 @@ export interface VerifyEmailTokenParams {
 export interface LoginUserParams {
   db: DBType
   kv: KVNamespace
+  env: CloudflareBindings
   loginData: LoginRequest
   userAgent?: string
   ipAddress?: string
@@ -233,6 +238,7 @@ export interface LogoutUserParams {
 export interface RefreshTokenParams {
   db: DBType
   kv: KVNamespace
+  env: CloudflareBindings
   refreshToken: string
 }
 

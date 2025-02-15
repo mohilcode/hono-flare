@@ -13,7 +13,6 @@ import {
   AuthProviderEnum,
   type GetCurrentSessionParams,
   type JWTPayload,
-  JWTPayloadSchema,
   type LoginResponse,
   type LoginUserParams,
   type LogoutUserParams,
@@ -34,17 +33,15 @@ import {
   ConflictError,
   RateLimitError,
   ResourceNotFoundError,
-  ValidationError,
-  validateOrThrow,
+  ValidationError
 } from '../types/error'
 import {
-  generateAuthKeyPair,
   generateCsrfToken,
   generateId,
   hashPassword,
   verifyPassword,
 } from '../utils/crypto'
-import { blacklistToken, generateAuthTokens, isTokenBlacklisted } from '../utils/jwt'
+import { blacklistToken, generateAuthTokens, isTokenBlacklisted, verifyJWTToken } from '../utils/jwt'
 
 const _getUserById = async (db: DBType, userId: string): Promise<User | null> => {
   const user = await db.select().from(schema.users).where(eq(schema.users.id, userId)).get()
@@ -122,6 +119,7 @@ export const registerUser = async ({
 export const loginUser = async ({
   db,
   kv,
+  env,
   loginData,
   userAgent,
   ipAddress,
@@ -145,14 +143,13 @@ export const loginUser = async ({
     throw new AuthenticationError('Invalid credentials')
   }
 
-  const keyPair = await generateAuthKeyPair()
   const tokenPayload: Omit<JWTPayload, 'iat' | 'exp' | 'jti'> = {
     sub: user.id,
     email: user.email,
     role: UserRoleEnum.USER,
   }
 
-  const token = await generateAuthTokens(tokenPayload, keyPair.privateKey)
+  const token = await generateAuthTokens(tokenPayload, env)
   const session = await createSession(kv, user.id, userAgent, ipAddress)
   const csrfToken = generateCsrfToken()
 
@@ -240,32 +237,33 @@ export const logoutUser = async ({
 export const refreshAccessToken = async ({
   db,
   kv,
+  env,
   refreshToken,
 }: RefreshTokenParams): Promise<Token> => {
-  const payload = validateOrThrow(JWTPayloadSchema, JSON.parse(atob(refreshToken.split('.')[1])))
+  try {
+    const payload = await verifyJWTToken(refreshToken, env)
 
-  const isBlacklisted = await isTokenBlacklisted(payload.jti, kv)
-  if (isBlacklisted) {
-    throw new AuthenticationError('Token has been revoked')
+    const isBlacklisted = await isTokenBlacklisted(payload.jti, kv)
+    if (isBlacklisted) {
+      throw new AuthenticationError('Token has been revoked')
+    }
+
+    const user = await _getUserById(db, payload.sub)
+    if (!user) {
+      throw new ResourceNotFoundError('User not found')
+    }
+
+    return await generateAuthTokens(
+      {
+        sub: user.id,
+        email: user.email,
+        role: user.role,
+      },
+      env
+    )
+  } catch (error) {
+    throw new AuthenticationError('Invalid refresh token')
   }
-
-  const user = await _getUserById(db, payload.sub)
-  if (!user) {
-    throw new ResourceNotFoundError('User not found')
-  }
-
-  const keyPair = await generateAuthKeyPair()
-
-  const token = await generateAuthTokens(
-    {
-      sub: user.id,
-      email: user.email,
-      role: user.role,
-    },
-    keyPair.privateKey
-  )
-
-  return token
 }
 
 export const getCurrentSession = async ({

@@ -182,19 +182,6 @@ export const toErrorResponse = (error: unknown, requestId?: string): ErrorRespon
   }
 }
 
-export const validateOrThrow = <T>(schema: z.ZodSchema<T>, data: unknown): T => {
-  try {
-    return schema.parse(data)
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      throw new ValidationError('Validation failed', {
-        errors: error.errors,
-      })
-    }
-    throw error
-  }
-}
-
 export interface ErrorLogContext {
   timestamp: string
   path: string
