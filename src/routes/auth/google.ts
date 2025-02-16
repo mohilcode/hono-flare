@@ -7,13 +7,12 @@ import { rateLimiter } from '../../middleware/auth'
 import { handleGoogleAuth } from '../../services/google'
 import { generateCsrfToken } from '../../utils/crypto'
 
-const route = new Hono<{ Bindings: CloudflareBindings }>()
+const router = new Hono<{ Bindings: CloudflareBindings }>()
 
 /**
  * Google OAuth
  */
-route.use('/', rateLimiter)
-route.get('/', async (c, next) => {
+router.get('/', rateLimiter, async (c, next) => {
   const middleware = googleAuth({
     scope: ['email', 'profile'],
     client_id: c.env.GOOGLE_CLIENT_ID,
@@ -27,8 +26,7 @@ route.get('/', async (c, next) => {
 /**
  * Google OAuth callback
  */
-route.use('/callback', rateLimiter)
-route.get('/callback', async (c, next) => {
+router.get('/callback', rateLimiter, async (c, next) => {
   const middleware = googleAuth({
     scope: ['email', 'profile'],
     client_id: c.env.GOOGLE_CLIENT_ID,
@@ -92,4 +90,4 @@ route.get('/callback', async (c, next) => {
   })
 })
 
-export default route
+export default router

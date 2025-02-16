@@ -2,7 +2,6 @@ import type { Context, Next } from 'hono'
 import { getCookie } from 'hono/cookie'
 import {
   ACCESS_TOKEN_COOKIE,
-  BEARER_PREFIX,
   CSRF_COOKIE,
   CSRF_HEADER,
   SESSION_COOKIE,
@@ -17,13 +16,6 @@ import {
 } from '../types/error'
 import { verifyCsrfToken } from '../utils/crypto'
 import { isTokenBlacklisted, verifyJWTToken } from '../utils/jwt'
-
-const _extractBearerToken = (authHeader: string | undefined): string => {
-  if (!authHeader?.startsWith(BEARER_PREFIX)) {
-    throw new AuthenticationError('Invalid authorization header')
-  }
-  return authHeader.slice(BEARER_PREFIX.length)
-}
 
 export const rateLimiter = async (c: Context, next: Next) => {
   const ip = c.req.header('CF-Connecting-IP') || 'unknown'

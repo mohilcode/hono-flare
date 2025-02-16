@@ -2,7 +2,6 @@ import { PRODUCTION, isProduction } from '../constants/env'
 
 export const RESEND_API_URL = 'https://api.resend.com'
 
-export const BEARER_PREFIX = 'Bearer '
 export const CSRF_HEADER = 'X-CSRF-Token'
 export const PBKDF2_ITERATIONS = 100000
 export const SALT_LENGTH = 16

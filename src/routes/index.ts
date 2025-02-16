@@ -1,12 +1,9 @@
 import type { Hono } from 'hono'
-import type { RequestIdVariables } from 'hono/request-id'
 import authRoutes from './auth'
+import type { BaseEnv } from '../types/hono'
 
 export const registerRoutes = (
-  app: Hono<{
-    Bindings: CloudflareBindings
-    Variables: RequestIdVariables
-  }>
+  app: Hono<BaseEnv>
 ) => {
   app.route('/auth', authRoutes)
 }

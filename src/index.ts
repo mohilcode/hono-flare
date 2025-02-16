@@ -3,20 +3,19 @@ import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { prettyJSON } from 'hono/pretty-json'
 import { requestId } from 'hono/request-id'
-import type { RequestIdVariables } from 'hono/request-id'
 import { secureHeaders } from 'hono/secure-headers'
 import { LOCALHOST, PRODUCTION, isDevelopment, isProduction } from './constants/env'
 import { errorHandler } from './middleware/error'
 import { registerRoutes } from './routes'
 import { ResourceNotFoundError } from './types/error'
+import type { BaseEnv } from './types/hono'
 
-const app = new Hono<{
-  Bindings: CloudflareBindings
-  Variables: RequestIdVariables
-}>()
+const app = new Hono<BaseEnv>()
 
 app.use('*', logger())
 app.use('*', requestId())
+
+app.get('/favicon.ico', c => c.body(null, 204))
 
 app.use('*', async (c, next) => {
   return cors({

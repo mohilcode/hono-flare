@@ -1,7 +1,6 @@
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
-import { z } from 'zod'
 import {
   ACCESS_TOKEN_COOKIE,
   COOKIE_OPTIONS,
@@ -26,21 +25,18 @@ import {
   LoginRequestSchema,
   RegisterRequestSchema,
   ResendVerifyEmailRequestSchema,
-  ResetPasswordRequestSchema,
-  type Variables,
+  ResetPasswordRequestSchema
 } from '../../types/auth'
 import { AuthenticationError, ValidationError } from '../../types/error'
 import googleRoutes from './google'
+import type { AuthEnv } from '../../types/hono'
 
-const route = new Hono<{
-  Bindings: CloudflareBindings
-  Variables: Variables
-}>()
+const router = new Hono<AuthEnv>()
 
 /**
  * Register new user
  */
-route.post('/register', rateLimiter, zValidator('json', RegisterRequestSchema), async c => {
+router.post('/register', rateLimiter, zValidator('json', RegisterRequestSchema), async c => {
   try {
     const db = createDB(c.env)
     const validatedData = c.req.valid('json')
@@ -63,7 +59,7 @@ route.post('/register', rateLimiter, zValidator('json', RegisterRequestSchema), 
 /**
  * Login user
  */
-route.post('/login', rateLimiter, zValidator('json', LoginRequestSchema), async c => {
+router.post('/login', rateLimiter, zValidator('json', LoginRequestSchema), async c => {
   try {
     const db = createDB(c.env)
     const validatedData = c.req.valid('json')
@@ -111,7 +107,7 @@ route.post('/login', rateLimiter, zValidator('json', LoginRequestSchema), async 
 /**
  * Logout user
  */
-route.post('/logout', async c => {
+router.post('/logout', async c => {
   try {
     await authenticate()(c, async () => {})
     await csrfProtection(c, async () => {})
@@ -138,7 +134,7 @@ route.post('/logout', async c => {
 /**
  * Refresh access token
  */
-route.post('/refresh', rateLimiter, async c => {
+router.post('/refresh', rateLimiter, async c => {
   try {
     const db = createDB(c.env)
     const refreshToken = getCookie(c, REFRESH_COOKIE)
@@ -180,7 +176,7 @@ route.post('/refresh', rateLimiter, async c => {
 /**
  * Get current session info
  */
-route.get('/session', async c => {
+router.get('/session', async c => {
   try {
     await authenticate()(c, async () => {})
 
@@ -199,7 +195,7 @@ route.get('/session', async c => {
 /**
  * Resend verification email
  */
-route.post('/resend', rateLimiter, zValidator('json', ResendVerifyEmailRequestSchema), async c => {
+router.post('/resend', rateLimiter, zValidator('json', ResendVerifyEmailRequestSchema), async c => {
   try {
     const db = createDB(c.env)
     const validatedData = c.req.valid('json')
@@ -223,7 +219,7 @@ route.post('/resend', rateLimiter, zValidator('json', ResendVerifyEmailRequestSc
 /**
  * Verify Email
  */
-route.get('/verify', async c => {
+router.get('/verify', async c => {
   try {
     const token = c.req.query('token')
     if (!token) {
@@ -250,7 +246,7 @@ route.get('/verify', async c => {
 /**
  * Forgot password request
  */
-route.post(
+router.post(
   '/forgot-password',
   rateLimiter,
   zValidator('json', ForgotPasswordRequestSchema),
@@ -280,7 +276,7 @@ route.post(
 /**
  * Reset password
  */
-route.post(
+router.post(
   '/reset-password',
   rateLimiter,
   zValidator('json', ResetPasswordRequestSchema),
@@ -306,6 +302,6 @@ route.post(
   }
 )
 
-route.route('/google', googleRoutes)
+router.route('/google', googleRoutes)
 
-export default route
+export default router
