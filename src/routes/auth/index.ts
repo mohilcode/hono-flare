@@ -25,11 +25,11 @@ import {
   LoginRequestSchema,
   RegisterRequestSchema,
   ResendVerifyEmailRequestSchema,
-  ResetPasswordRequestSchema
+  ResetPasswordRequestSchema,
 } from '../../types/auth'
 import { AuthenticationError, ValidationError } from '../../types/error'
-import googleRoutes from './google'
 import type { AuthEnv } from '../../types/hono'
+import googleRoutes from './google'
 
 const router = new Hono<AuthEnv>()
 
