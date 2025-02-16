@@ -14,7 +14,7 @@ node_modules/
 .pnpm-store/
 .pnpm-debug.log*
 .wrangler/
-wrangler.toml
+wrangler.jsonc
 migrations/
 
 # Environment variables

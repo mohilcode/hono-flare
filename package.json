@@ -1,8 +1,8 @@
 {
   "name": "hono-flare",
   "scripts": {
-    "dev": "pnpm db:migrate:preview && NODE_ENV=development wrangler dev --remote",
-    "deploy": "pnpm db:migrate:prod && NODE_ENV=production wrangler deploy --minify",
+    "dev": "pnpm db:migrate:dev && NODE_ENV=development wrangler dev --remote",
+    "deploy": "pnpm db:migrate && NODE_ENV=production wrangler deploy --minify",
     "types:cf": "wrangler types ./env.d.ts --env-interface CloudflareBindings",
     "lint": "biome lint .",
     "check": "biome check --write .",
