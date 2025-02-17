@@ -2,11 +2,11 @@ import { googleAuth } from '@hono/oauth-providers/google'
 import { Hono } from 'hono'
 import { setCookie } from 'hono/cookie'
 import {
+  ACCESS_TOKEN_COOKIE,
   COOKIE_OPTIONS,
   CSRF_COOKIE,
+  REFRESH_COOKIE,
   SESSION_COOKIE,
-  ACCESS_TOKEN_COOKIE,
-  REFRESH_COOKIE
 } from '../../constants/services'
 import { createDB } from '../../db'
 import { rateLimiter } from '../../middleware/auth'
@@ -14,6 +14,8 @@ import { handleGoogleAuth } from '../../services/google'
 import { generateCsrfToken } from '../../utils/crypto'
 
 const router = new Hono<{ Bindings: CloudflareBindings }>()
+
+
 
 /**
  * Google OAuth
@@ -103,10 +105,13 @@ router.get('/callback', rateLimiter, async (c, next) => {
       })
     }
 
-    return c.json({
-      success: true,
-      message: 'Google authentication successful'
-    }, 200)
+    return c.json(
+      {
+        success: true,
+        message: 'Google authentication successful',
+      },
+      200
+    )
   } catch (error) {
     throw error
   }
