@@ -15,8 +15,6 @@ import { generateCsrfToken } from '../../utils/crypto'
 
 const router = new Hono<{ Bindings: CloudflareBindings }>()
 
-
-
 /**
  * Google OAuth
  */

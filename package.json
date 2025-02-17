@@ -13,7 +13,10 @@
     "db:studio": "TARGET=prod drizzle-kit studio --config=drizzle.config.ts"
   },
   "simple-git-hooks": {
-    "pre-commit": "pnpm run check && git update-index --again"
+    "pre-commit": "npx lint-staged"
+  },
+  "lint-staged": {
+    "*": ["biome check --apply", "biome lint --apply"]
   },
   "dependencies": {
     "@hono/oauth-providers": "^0.6.2",
@@ -28,6 +31,7 @@
     "better-sqlite3": "^11.6.0",
     "dotenv": "^16.4.5",
     "drizzle-kit": "^0.28.1",
+    "lint-staged": "^15.4.3",
     "simple-git-hooks": "^2.11.1",
     "tsx": "^4.19.2",
     "wrangler": "^3.109.1"
