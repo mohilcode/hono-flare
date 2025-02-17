@@ -42,7 +42,7 @@ router.post('/register', rateLimiter, zValidator('json', RegisterRequestSchema),
     const validatedData = c.req.valid('json')
     const baseUrl = new URL(c.req.url).origin
 
-    const user = await registerUser({
+    await registerUser({
       db,
       kv: c.env.KV,
       userData: validatedData,
@@ -50,9 +50,13 @@ router.post('/register', rateLimiter, zValidator('json', RegisterRequestSchema),
       resendApiKey: c.env.RESEND_API_KEY,
     })
 
-    return c.json({ user }, 201)
+    return c.json({
+      success: true,
+      message: 'Registration successful. Please check your email to verify your account.'
+    }, 201)
   } catch (error) {
     throw error
+
   }
 })
 
@@ -64,7 +68,7 @@ router.post('/login', rateLimiter, zValidator('json', LoginRequestSchema), async
     const db = createDB(c.env)
     const validatedData = c.req.valid('json')
 
-    const { user, token, session, csrfToken } = await loginUser({
+    const { token, session, csrfToken } = await loginUser({
       db,
       kv: c.env.KV,
       env: c.env,
@@ -93,12 +97,9 @@ router.post('/login', rateLimiter, zValidator('json', LoginRequestSchema), async
     }
 
     return c.json({
-      user,
-      token: {
-        expiresIn: token.expiresIn,
-      },
-      csrfToken,
-    })
+      success: true,
+      message: 'Login successful'
+    }, 200)
   } catch (error) {
     throw error
   }
@@ -125,7 +126,10 @@ router.post('/logout', async c => {
     deleteCookie(c, REFRESH_COOKIE)
     deleteCookie(c, ACCESS_TOKEN_COOKIE)
 
-    return c.json({ message: 'Logged out successfully' })
+    return c.json({
+      success: true,
+      message: 'Logged out successfully'
+    }, 200)
   } catch (error) {
     throw error
   }
@@ -163,11 +167,9 @@ router.post('/refresh', rateLimiter, async c => {
     })
 
     return c.json({
-      token: {
-        accessToken: token.accessToken,
-        expiresIn: token.expiresIn,
-      },
-    })
+      success: true,
+      message: 'Token refreshed successfully'
+    }, 200)
   } catch (error) {
     throw error
   }
@@ -186,7 +188,10 @@ router.get('/session', async c => {
       userId: c.get('userId'),
     })
 
-    return c.json({ session: sessionInfo })
+    return c.json({
+      success: true,
+      session: sessionInfo
+    }, 200)
   } catch (error) {
     throw error
   }
@@ -210,7 +215,10 @@ router.post('/resend', rateLimiter, zValidator('json', ResendVerifyEmailRequestS
       resendApiKey: c.env.RESEND_API_KEY,
     })
 
-    return c.json({ message: 'Verification email sent' })
+    return c.json({
+      success: true,
+      message: 'Verification email sent'
+    }, 200)
   } catch (error) {
     throw error
   }
@@ -237,7 +245,7 @@ router.get('/verify', async c => {
     return c.json({
       success: true,
       message: 'Email verified successfully',
-    })
+    }, 200)
   } catch (error) {
     throw error
   }
@@ -265,8 +273,9 @@ router.post(
       })
 
       return c.json({
+        success: true,
         message: 'If your email is registered, you will receive password reset instructions',
-      })
+      }, 200)
     } catch (error) {
       throw error
     }
@@ -294,8 +303,9 @@ router.post(
       })
 
       return c.json({
+        success: true,
         message: 'Password reset successful',
-      })
+      }, 200)
     } catch (error) {
       throw error
     }

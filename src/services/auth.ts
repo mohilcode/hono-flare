@@ -65,7 +65,7 @@ export const registerUser = async ({
   userData,
   baseUrl,
   resendApiKey,
-}: RegisterUserParams): Promise<User> => {
+}: RegisterUserParams): Promise<void> => {
   const existingUser = await db
     .select()
     .from(schema.users)
@@ -106,14 +106,6 @@ export const registerUser = async ({
     firstName: userData.firstName,
     verificationUrl,
   })
-
-  const { password: _, ...userWithoutPassword } = newUser
-  return UserSchema.parse({
-    ...userWithoutPassword,
-    role: UserRoleEnum.USER,
-    provider: AuthProviderEnum.EMAIL,
-    emailVerified: false,
-  })
 }
 
 export const loginUser = async ({
@@ -153,16 +145,7 @@ export const loginUser = async ({
   const session = await createSession(kv, user.id, userAgent, ipAddress)
   const csrfToken = generateCsrfToken()
 
-  const { password: _, ...userWithoutPassword } = user
-  const sanitizedUser = UserSchema.parse({
-    ...userWithoutPassword,
-    role: UserRoleEnum.USER,
-    provider: AuthProviderEnum.EMAIL,
-    emailVerified: true,
-  })
-
   return {
-    user: sanitizedUser,
     token,
     session,
     csrfToken,

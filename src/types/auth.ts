@@ -100,7 +100,6 @@ export type AuthError = {
 }
 
 export interface LoginResponse {
-  user: User
   token: Token
   session: Session
   csrfToken: string
