@@ -16,16 +16,17 @@
     "pre-commit": "npx lint-staged"
   },
   "lint-staged": {
-    "*": ["biome check --apply", "biome lint --apply"]
+    "*": "biome check --write ."
   },
   "dependencies": {
     "@hono/oauth-providers": "^0.6.2",
     "@hono/zod-validator": "^0.4.3",
     "drizzle-orm": "^0.36.4",
-    "hono": "^4.6.12"
+    "hono": "^4.6.12",
+    "zod": "^3.24.2"
   },
   "devDependencies": {
-    "@biomejs/biome": "1.9.4",
+    "@biomejs/biome": "^1.9.4",
     "@cloudflare/workers-types": "^4.20250214.0",
     "@types/node": "^22.10.1",
     "better-sqlite3": "^11.6.0",
