@@ -2,12 +2,9 @@ import { eq } from 'drizzle-orm'
 import { MAX_SESSIONS_PER_USER, RATE_LIMIT_MAX, SESSION_EXPIRY } from '../constants/services'
 import type { DBType } from '../db'
 import * as schema from '../db/schema'
-import {
-  createEmailConfig,
-  getEmailDomain,
-  isDisposableEmail,
-  validateEmail,
-} from '../services/email'
+import { generateCsrfToken, generateId, hashPassword, verifyPassword } from '../lib/crypto'
+import { createEmailConfig, getEmailDomain, isDisposableEmail, validateEmail } from '../lib/email'
+import { blacklistToken, generateAuthTokens, isTokenBlacklisted, verifyJWTToken } from '../lib/jwt'
 import { checkRateLimit, createVerificationToken, verifyToken } from '../services/verification'
 import {
   AuthProviderEnum,
@@ -35,13 +32,6 @@ import {
   ResourceNotFoundError,
   ValidationError,
 } from '../types/error'
-import { generateCsrfToken, generateId, hashPassword, verifyPassword } from '../utils/crypto'
-import {
-  blacklistToken,
-  generateAuthTokens,
-  isTokenBlacklisted,
-  verifyJWTToken,
-} from '../utils/jwt'
 
 const _getUserById = async (db: DBType, userId: string): Promise<User | null> => {
   const user = await db.select().from(schema.users).where(eq(schema.users.id, userId)).get()

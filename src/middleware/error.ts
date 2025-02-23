@@ -11,7 +11,7 @@ import {
   isBaseError,
   toErrorResponse,
 } from '../types/error'
-import { HttpStatusCode } from '../types/http'
+import { type ContentfulHttpStatus, HttpStatusCode } from '../types/http'
 
 const _errorLogger = async (err: Error | BaseError, c: Context): Promise<void> => {
   const logContext: ErrorLogContext = {
@@ -36,11 +36,11 @@ export const errorHandler = async (err: Error, c: Context) => {
   await _errorLogger(err, c)
 
   let response: ErrorResponse
-  let status: number
+  let status: ContentfulHttpStatus
 
   if (isBaseError(err)) {
     response = err.toJSON()
-    status = err.statusCode
+    status = err.statusCode === 204 ? 200 : (err.statusCode as ContentfulHttpStatus)
   } else if (err instanceof HTTPException) {
     response = {
       code: ErrorCodes.INVALID_REQUEST,
@@ -53,7 +53,7 @@ export const errorHandler = async (err: Error, c: Context) => {
       ...(isDevelopment && { stack: err.stack }),
       timestamp: new Date().toISOString(),
     }
-    status = err.status
+    status = (err.status as ContentfulHttpStatus) || HttpStatusCode.INTERNAL_SERVER_ERROR
   } else if (err instanceof Error && err.name === 'ZodError') {
     const zodError = err as z.ZodError
     const validationError = new ValidationError('Validation failed', {
@@ -74,5 +74,5 @@ export const errorHandler = async (err: Error, c: Context) => {
     response.stack = err.stack
   }
 
-  return c.json(response, { status })
+  return c.json(response, status)
 }

@@ -14,6 +14,8 @@ export type HttpStatus =
   | 502
   | 503
 
+export type ContentfulHttpStatus = Exclude<HttpStatus, 204>
+
 export const HttpStatusCode = {
   OK: 200 as const,
   CREATED: 201 as const,

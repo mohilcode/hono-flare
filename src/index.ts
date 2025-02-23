@@ -1,16 +1,22 @@
 import { Hono } from 'hono'
+import { contextStorage } from 'hono/context-storage'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { prettyJSON } from 'hono/pretty-json'
 import { requestId } from 'hono/request-id'
 import { secureHeaders } from 'hono/secure-headers'
 import { LOCALHOST, PRODUCTION, isDevelopment, isProduction } from './constants/env'
+import { auth } from './lib/auth'
 import { errorHandler } from './middleware/error'
 import { registerRoutes } from './routes'
 import { ResourceNotFoundError } from './types/error'
 import type { BaseEnv } from './types/hono'
 
 const app = new Hono<BaseEnv>()
+
+const publicRoutes: string[] = []
+
+app.use('*', contextStorage())
 
 app.use('*', logger())
 app.use('*', requestId())
@@ -21,9 +27,9 @@ app.use('*', async (c, next) => {
   return cors({
     origin: isProduction ? PRODUCTION : LOCALHOST,
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
+    allowHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
-    maxAge: 86400,
+    maxAge: 600,
   })(c, next)
 })
 
@@ -32,6 +38,35 @@ app.use('*', async (c, next) => {
     return prettyJSON()(c, next)
   }
   await next()
+})
+
+app.use('*', async (c, next) => {
+  const isPublicRoute = publicRoutes.some(route => {
+    if (route.endsWith('*')) {
+      return c.req.path.startsWith(route.slice(0, -1))
+    }
+    return c.req.path === route
+  })
+
+  if (isPublicRoute) {
+    return next()
+  }
+
+  const session = await auth.api.getSession({ headers: c.req.raw.headers })
+
+  if (!session) {
+    c.set('user', null)
+    c.set('session', null)
+    return next()
+  }
+
+  c.set('user', session.user)
+  c.set('session', session.session)
+  return next()
+})
+
+app.on(['POST', 'GET'], '/api/auth/*', c => {
+  return auth.handler(c.req.raw)
 })
 
 app.get('/', c => {
