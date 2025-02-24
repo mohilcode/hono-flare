@@ -16,7 +16,7 @@ const GetUserByEmailSchema = z.object({
  */
 app.get('/me', zValidator('query', GetUserByEmailSchema), async c => {
   try {
-    const db = createDB()
+    const db = createDB(c.env)
     const { email } = c.req.valid('query')
 
     const user = await db.query.user.findFirst({

@@ -19,7 +19,6 @@
     "*": "biome check --write ."
   },
   "dependencies": {
-    "@hono/oauth-providers": "^0.6.2",
     "@hono/zod-validator": "^0.4.3",
     "better-auth": "^1.1.19",
     "drizzle-orm": "^0.36.4",

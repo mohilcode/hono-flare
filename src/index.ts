@@ -5,8 +5,8 @@ import { logger } from 'hono/logger'
 import { prettyJSON } from 'hono/pretty-json'
 import { requestId } from 'hono/request-id'
 import { secureHeaders } from 'hono/secure-headers'
-import { LOCALHOST, PRODUCTION, isDevelopment, isProduction } from './constants/env'
-import { auth } from './lib/auth'
+import { APP_BASE_URL, isDevelopment } from './constants/env'
+import { getAuth } from './lib/auth'
 import { errorHandler } from './middleware/error'
 import { registerRoutes } from './routes'
 import { ResourceNotFoundError } from './types/error'
@@ -16,7 +16,7 @@ const app = new Hono<BaseEnv>()
 
 const publicRoutes: string[] = []
 
-app.use('*', contextStorage())
+app.use(contextStorage())
 
 app.use('*', logger())
 app.use('*', requestId())
@@ -25,7 +25,7 @@ app.get('/favicon.ico', c => c.body(null, 204))
 
 app.use('*', async (c, next) => {
   return cors({
-    origin: isProduction ? PRODUCTION : LOCALHOST,
+    origin: APP_BASE_URL,
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
@@ -52,6 +52,7 @@ app.use('*', async (c, next) => {
     return next()
   }
 
+  const auth = getAuth(c.env)
   const session = await auth.api.getSession({ headers: c.req.raw.headers })
 
   if (!session) {
@@ -66,6 +67,7 @@ app.use('*', async (c, next) => {
 })
 
 app.on(['POST', 'GET'], '/api/auth/*', c => {
+  const auth = getAuth(c.env)
   return auth.handler(c.req.raw)
 })
 

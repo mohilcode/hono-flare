@@ -1,12 +1,14 @@
 import { RESEND_API_URL } from '../constants/services'
 import type { EmailResponse, ResendError, SendEmailParams } from '../types/email'
-import { getBindings } from './context'
 
-export const sendEmail = async (params: SendEmailParams): Promise<EmailResponse> => {
+export const sendEmail = async (
+  params: SendEmailParams,
+  apiKey: string
+): Promise<EmailResponse> => {
   const response = await fetch(`${RESEND_API_URL}/emails`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${getBindings().RESEND_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(params),
