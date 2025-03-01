@@ -71,11 +71,11 @@ app.on(['POST', 'GET'], '/api/auth/*', c => {
   return auth.handler(c.req.raw)
 })
 
-app.get('/', c => {
+app.get('/api/', c => {
   return c.text('Hello, Universe!')
 })
 
-app.get('/health', c =>
+app.get('/api/health', c =>
   c.json({
     status: 'ok',
     timestamp: new Date().toISOString(),

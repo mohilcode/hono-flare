@@ -1,22 +1,25 @@
 {
   "name": "hono-flare",
   "scripts": {
-    "dev": "pnpm db:migrate:dev && NODE_ENV=development wrangler dev --remote",
-    "deploy": "pnpm db:migrate && NODE_ENV=production wrangler deploy --minify",
+    "dev": "pnpm check && pnpm db:migrate:local && NODE_ENV=development wrangler dev",
+    "deploy:staging": "pnpm check && pnpm db:migrate:staging && NODE_ENV=staging wrangler deploy --env staging --minify",
+    "deploy": "pnpm check && pnpm db:migrate && NODE_ENV=production wrangler deploy --minify",
     "types:cf": "wrangler types ./env.d.ts --env-interface CloudflareBindings",
     "lint": "biome lint .",
     "check": "biome check --write .",
     "db:schema": "drizzle-kit generate",
-    "db:migrate:dev": "wrangler d1 migrations apply db-flare --remote --preview",
+    "db:migrate:local": "wrangler d1 migrations apply db-flare --local",
+    "db:migrate:staging": "wrangler d1 migrations apply db-flare-staging --env staging --remote",
     "db:migrate": "wrangler d1 migrations apply db-flare --remote",
-    "db:studio:dev": "drizzle-kit studio --config=drizzle.config.ts",
-    "db:studio": "TARGET=prod drizzle-kit studio --config=drizzle.config.ts"
+    "db:studio:local": "drizzle-kit studio --config=drizzle.config.ts",
+    "db:studio:staging": "TARGET=staging drizzle-kit studio --config=drizzle.config.ts",
+    "db:studio": "TARGET=production drizzle-kit studio --config=drizzle.config.ts"
   },
   "simple-git-hooks": {
     "pre-commit": "npx lint-staged"
   },
   "lint-staged": {
-    "*": "biome check --write ."
+    "*": ["biome check --write ."]
   },
   "dependencies": {
     "@hono/zod-validator": "^0.4.3",

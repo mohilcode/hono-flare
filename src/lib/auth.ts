@@ -1,7 +1,7 @@
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { admin } from 'better-auth/plugins'
-import { API_BASE_URL, FRONTEND_LOCALHOST, PRODUCTION } from '../constants/env'
+import { API_BASE_URL, APP_BASE_URL } from '../constants/env'
 import { EMAIL_FROM } from '../constants/services'
 import { createDB } from '../db'
 import { sendEmail } from './email'
@@ -12,7 +12,7 @@ export const getAuth = (env: CloudflareBindings) => {
     database: drizzleAdapter(db, {
       provider: 'sqlite',
     }),
-    trustedOrigins: [FRONTEND_LOCALHOST, PRODUCTION],
+    trustedOrigins: [APP_BASE_URL],
     secondaryStorage: {
       get: async key => {
         const value = await env.KV.get(key)
