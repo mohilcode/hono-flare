@@ -75,6 +75,10 @@ app.get('/api/', c => {
   return c.text('Hello, Universe!')
 })
 
+app.get('/api/dashboard', c => {
+  return c.redirect(`${APP_BASE_URL}/dashboard`)
+})
+
 app.get('/api/health', c =>
   c.json({
     status: 'ok',

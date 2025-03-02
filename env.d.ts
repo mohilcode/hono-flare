@@ -3,6 +3,7 @@
 interface CloudflareBindings {
   KV: KVNamespace
   NODE_ENV: string
+  BETTER_AUTH_URL: string
   CLOUDFLARE_ACCOUNT_ID: string
   CLOUDFLARE_DATABASE_ID: string
   CLOUDFLARE_D1_TOKEN: string

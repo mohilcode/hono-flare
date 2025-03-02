@@ -12,6 +12,7 @@ export const getAuth = (env: CloudflareBindings) => {
     database: drizzleAdapter(db, {
       provider: 'sqlite',
     }),
+    baseURL: API_BASE_URL,
     trustedOrigins: [APP_BASE_URL],
     secondaryStorage: {
       get: async key => {
@@ -32,10 +33,9 @@ export const getAuth = (env: CloudflareBindings) => {
     plugins: [admin()],
     emailAndPassword: {
       enabled: true,
-      autoSignIn: false,
       requireEmailVerification: true,
       sendResetPassword: async ({ user, token }) => {
-        const resetPasswordUrl = `${API_BASE_URL}/api/auth/reset-password?token=${token}`
+        const resetPasswordUrl = `${APP_BASE_URL}/reset-password?token=${token}`
         await sendEmail(
           {
             from: EMAIL_FROM,
@@ -50,7 +50,7 @@ export const getAuth = (env: CloudflareBindings) => {
     emailVerification: {
       sendOnSignUp: true,
       sendVerificationEmail: async ({ user, token }) => {
-        const verificationUrl = `${API_BASE_URL}/api/auth/verify-email?token=${token}`
+        const verificationUrl = `${APP_BASE_URL}/verify-email?token=${token}`
         await sendEmail(
           {
             from: EMAIL_FROM,
