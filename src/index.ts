@@ -8,7 +8,7 @@ import { secureHeaders } from 'hono/secure-headers'
 import { APP_BASE_URL, isDevelopment } from './constants/env'
 import { getAuth } from './lib/auth'
 import { errorHandler } from './middleware/error'
-import { registerRoutes } from './routes'
+import rpcRouter from './routes'
 import { ResourceNotFoundError } from './types/error'
 import type { BaseEnv } from './types/hono'
 
@@ -79,6 +79,8 @@ app.get('/api/dashboard', c => {
   return c.redirect(`${APP_BASE_URL}/dashboard`)
 })
 
+app.route('/api', rpcRouter)
+
 app.get('/api/health', c =>
   c.json({
     status: 'ok',
@@ -114,8 +116,6 @@ app.use('*', (c, next) => {
     xXssProtection: '1; mode=block',
   })(c, next)
 })
-
-registerRoutes(app)
 
 app.onError(errorHandler)
 

@@ -5,7 +5,7 @@ import { createDB } from '../db'
 import { ResourceNotFoundError } from '../types/error'
 import type { BaseEnv } from '../types/hono'
 
-const app = new Hono<BaseEnv>()
+const router = new Hono<BaseEnv>()
 
 const GetUserByEmailSchema = z.object({
   email: z.string().email(),
@@ -14,7 +14,7 @@ const GetUserByEmailSchema = z.object({
 /**
  * Get user info
  */
-app.get('/me', zValidator('query', GetUserByEmailSchema), async c => {
+router.get('/me', zValidator('query', GetUserByEmailSchema), async c => {
   try {
     const db = createDB(c.env)
     const { email } = c.req.valid('query')
@@ -52,4 +52,4 @@ app.get('/me', zValidator('query', GetUserByEmailSchema), async c => {
   }
 })
 
-export default app
+export default router
